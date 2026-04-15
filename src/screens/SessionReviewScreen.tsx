@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet, SafeAreaView,
 } from 'react-native';
-import { useRoute, useNavigation } from '@react-navigation/native';
+import { useRoute } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
 import { getSession } from '../modules/session/SessionManager';
 import { getSessionCounts, exportSession } from '../modules/export/ExportEngine';
@@ -31,7 +31,6 @@ const VEHICLE_LABELS: Record<string, string> = {
 
 export default function SessionReviewScreen() {
   const { params } = useRoute<Route>();
-  const navigation = useNavigation();
   const [session, setSession] = useState<Session | null>(null);
   const [counts, setCounts] = useState<Count[]>([]);
 
