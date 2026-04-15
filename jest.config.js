@@ -6,4 +6,5 @@ module.exports = {
     'node_modules/(?!((jest-)?react-native|@react-native(-community)?)|expo(nent)?|@expo(nent)?/.*|react-navigation|@react-navigation/.*|react-native-screens|react-native-safe-area-context)',
   ],
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx'],
+  passWithNoTests: true,
 };
