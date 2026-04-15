@@ -28,3 +28,20 @@ describe('error cases', () => {
     expect(() => computeToDirection('Gate A', 'left')).toThrow('custom leg');
   });
 });
+
+describe('edge cases', () => {
+  test('custom legs take priority over cardinal name collision', () => {
+    const legs = ['N', 'NE', 'SE', 'SW', 'NW'];
+    // 'N' is index 0, right → 'NE' (not the cardinal result 'E')
+    expect(computeToDirection('N', 'right', legs)).toBe('NE');
+  });
+
+  test('throws when custom legs has fewer than 3 entries', () => {
+    expect(() => computeToDirection('A', 'right', ['A', 'B'])).toThrow('at least 3');
+  });
+
+  test('straight on 3-leg tee: index 0 → index 1', () => {
+    const legs = ['North', 'East', 'South'];
+    expect(computeToDirection('North', 'straight', legs)).toBe('East');
+  });
+});
