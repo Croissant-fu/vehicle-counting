@@ -1,11 +1,11 @@
-jest.mock('expo-file-system', () => ({
+jest.mock('expo-file-system/legacy', () => ({
   documentDirectory: '/mock/documents/',
   writeAsStringAsync: jest.fn().mockResolvedValue(undefined),
   deleteAsync: jest.fn().mockResolvedValue(undefined),
   EncodingType: { UTF8: 'utf8', Base64: 'base64' },
 }));
 jest.mock('expo-sharing');
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { exportSession } from './ExportEngine';
 import { Session, Count } from '../../types';
