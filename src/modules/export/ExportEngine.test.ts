@@ -1,5 +1,10 @@
+jest.mock('expo-file-system', () => ({
+  documentDirectory: '/mock/documents/',
+  writeAsStringAsync: jest.fn().mockResolvedValue(undefined),
+  deleteAsync: jest.fn().mockResolvedValue(undefined),
+  EncodingType: { UTF8: 'utf8', Base64: 'base64' },
+}));
 jest.mock('expo-sharing');
-jest.mock('expo-file-system');
 import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import { exportSession } from './ExportEngine';

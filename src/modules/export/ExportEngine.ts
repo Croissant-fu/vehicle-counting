@@ -62,17 +62,17 @@ export async function exportSession(
 
   if (format === 'csv') {
     await FileSystem.writeAsStringAsync(path, buildCsv(session, counts), {
-      encoding: 'utf8' as any,
+      encoding: FileSystem.EncodingType.UTF8,
     });
   } else if (format === 'json') {
     await FileSystem.writeAsStringAsync(
       path,
       JSON.stringify({ session, counts }, null, 2),
-      { encoding: 'utf8' as any }
+      { encoding: FileSystem.EncodingType.UTF8 }
     );
   } else {
     await FileSystem.writeAsStringAsync(path, buildXlsx(session, counts), {
-      encoding: 'base64' as any,
+      encoding: FileSystem.EncodingType.Base64,
     });
   }
 
