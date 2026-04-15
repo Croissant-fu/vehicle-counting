@@ -52,14 +52,20 @@ describe('createSession', () => {
 
 describe('endSession', () => {
   test('sets ended_at and returns updated session', async () => {
+    __mockDb.runAsync.mockResolvedValueOnce({ lastInsertRowId: 0, changes: 1 });
     __mockDb.getFirstAsync.mockResolvedValueOnce({
       id: 'sess_test', location_name: 'X', intersection_type: '4way',
       time_period: 'am_peak', lat: null, lng: null, custom_legs: null,
-      started_at: '2026-04-15T08:00:00Z', ended_at: null, total_count: 5,
+      started_at: '2026-04-15T08:00:00Z', ended_at: '2026-04-15T09:00:00Z', total_count: 5,
     });
     const session = await endSession('sess_test');
     expect(session.ended_at).not.toBeNull();
     expect(__mockDb.runAsync).toHaveBeenCalledTimes(1);
+  });
+
+  test('throws when session does not exist', async () => {
+    __mockDb.runAsync.mockResolvedValueOnce({ lastInsertRowId: 0, changes: 0 });
+    await expect(endSession('nonexistent')).rejects.toThrow('Session not found');
   });
 });
 

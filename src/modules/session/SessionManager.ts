@@ -9,11 +9,27 @@ function generateSessionId(): string {
 }
 
 function deserializeSession(row: Record<string, unknown>): Session {
+  let custom_legs: string[] | null = null;
+  if (row.custom_legs != null) {
+    try {
+      custom_legs = JSON.parse(row.custom_legs as string);
+    } catch {
+      throw new Error(
+        `Session "${row.id}": custom_legs contains invalid JSON: ${row.custom_legs}`
+      );
+    }
+  }
   return {
-    ...(row as Omit<Session, 'custom_legs'>),
-    custom_legs: row.custom_legs
-      ? JSON.parse(row.custom_legs as string)
-      : null,
+    id:                row.id as string,
+    location_name:     row.location_name as string,
+    intersection_type: row.intersection_type as Session['intersection_type'],
+    time_period:       row.time_period as Session['time_period'],
+    lat:               row.lat as number | null,
+    lng:               row.lng as number | null,
+    started_at:        row.started_at as string,
+    ended_at:          row.ended_at as string | null,
+    total_count:       Number(row.total_count),
+    custom_legs,
   };
 }
 
@@ -48,14 +64,15 @@ export async function createSession(input: CreateSessionInput): Promise<Session>
 export async function endSession(sessionId: string): Promise<Session> {
   const db = await getDatabase();
   const ended_at = new Date().toISOString();
-  await db.runAsync(
+  const result = await db.runAsync(
     `UPDATE sessions SET ended_at = ? WHERE id = ?`,
     [ended_at, sessionId]
   );
-  const session = await getSession(sessionId);
-  // Overlay the ended_at we just wrote — the DB row returned by getSession
-  // may reflect the pre-update snapshot in test environments.
-  return { ...session, ended_at };
+  if (result.changes === 0) {
+    throw new Error(`Session not found: ${sessionId}`);
+  }
+  // getSession will now return the ended session
+  return getSession(sessionId);
 }
 
 export async function getSession(sessionId: string): Promise<Session> {
