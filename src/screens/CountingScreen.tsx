@@ -1,16 +1,16 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet, SafeAreaView, Alert,
+  View, Text, TouchableOpacity, StyleSheet, Alert,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 import { CounterEngine } from '../modules/counter/CounterEngine';
 import { endSession, getSession } from '../modules/session/SessionManager';
-import ApproachSelector from '../components/ApproachSelector';
 import VehicleTypePicker from '../components/VehicleTypePicker';
-import DirectionButtons from '../components/DirectionButtons';
 import UndoBar from '../components/UndoBar';
+import IntersectionDragMap from '../components/IntersectionDragMap';
 import { useResponsiveLayout } from '../hooks/useResponsiveLayout';
 import { Session, Movement, VehicleType } from '../types';
 import { RootStackParamList } from '../navigation/AppNavigator';
@@ -32,9 +32,6 @@ export default function CountingScreen() {
   const { isTablet } = useResponsiveLayout();
 
   const engineRef = useRef(new CounterEngine(session));
-  const [fromDirection, setFromDirection] = useState(
-    session.custom_legs?.[0] ?? 'N'
-  );
   const [vehicleType, setVehicleType] = useState<VehicleType>('moto');
   const [total, setTotal] = useState(session.total_count);
   const [elapsed, setElapsed] = useState(0);
@@ -44,8 +41,8 @@ export default function CountingScreen() {
     return () => clearInterval(interval);
   }, []);
 
-  const handleDirection = async (movement: Movement) => {
-    await engineRef.current.record({ from_direction: fromDirection, movement, vehicle_type: vehicleType });
+  const handleDrag = async (from: string, movement: Movement) => {
+    await engineRef.current.record({ from_direction: from, movement, vehicle_type: vehicleType });
     const updated = await getSession(session.id);
     setTotal(updated.total_count);
   };
@@ -75,23 +72,6 @@ export default function CountingScreen() {
     );
   };
 
-  const controls = (
-    <>
-      <View style={styles.section}>
-        <Text style={styles.sectionLabel}>FROM DIRECTION</Text>
-        <ApproachSelector
-          legs={session.custom_legs}
-          selected={fromDirection}
-          onSelect={setFromDirection}
-        />
-      </View>
-      <View style={styles.section}>
-        <Text style={styles.sectionLabel}>VEHICLE TYPE</Text>
-        <VehicleTypePicker selected={vehicleType} onSelect={setVehicleType} />
-      </View>
-    </>
-  );
-
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
@@ -104,18 +84,24 @@ export default function CountingScreen() {
 
       {isTablet ? (
         <View style={styles.tabletLayout}>
-          <View style={styles.tabletSidebar}>{controls}</View>
+          <View style={styles.tabletSidebar}>
+            <View style={styles.section}>
+              <Text style={styles.sectionLabel}>VEHICLE TYPE</Text>
+              <VehicleTypePicker selected={vehicleType} onSelect={setVehicleType} />
+            </View>
+          </View>
           <View style={styles.tabletMain}>
-            <DirectionButtons onPress={handleDirection} />
+            <IntersectionDragMap legs={session.custom_legs} onDrag={handleDrag} />
             <UndoBar total={total} onUndo={handleUndo} />
           </View>
         </View>
       ) : (
         <View style={styles.phoneLayout}>
-          {controls}
-          <View style={styles.directionArea}>
-            <DirectionButtons onPress={handleDirection} />
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>VEHICLE TYPE</Text>
+            <VehicleTypePicker selected={vehicleType} onSelect={setVehicleType} />
           </View>
+          <IntersectionDragMap legs={session.custom_legs} onDrag={handleDrag} />
           <UndoBar total={total} onUndo={handleUndo} />
         </View>
       )}
@@ -136,8 +122,7 @@ const styles = StyleSheet.create({
   phoneLayout: { flex: 1, padding: 16, gap: 12 },
   tabletLayout: { flex: 1, flexDirection: 'row' },
   tabletSidebar: { width: 260, padding: 16, borderRightWidth: 1, borderRightColor: '#1e2a3a', gap: 12 },
-  tabletMain: { flex: 1, padding: 16, justifyContent: 'flex-end', gap: 12 },
+  tabletMain: { flex: 1, padding: 16, gap: 12 },
   section: { gap: 6 },
   sectionLabel: { color: '#888', fontSize: 11, fontWeight: 'bold', letterSpacing: 1 },
-  directionArea: { flex: 1, justifyContent: 'center' },
 });

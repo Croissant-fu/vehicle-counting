@@ -7,6 +7,14 @@ const CARDINALS: Record<string, Record<Movement, string>> = {
   W: { left: 'S', straight: 'E', right: 'N' },
 };
 
+// Reverse of CARDINALS: given from + to, return the movement.
+const CARDINALS_REVERSE: Record<string, Record<string, Movement>> = {
+  N: { W: 'left', S: 'straight', E: 'right' },
+  S: { E: 'left', N: 'straight', W: 'right' },
+  E: { N: 'left', W: 'straight', S: 'right' },
+  W: { S: 'left', E: 'straight', N: 'right' },
+};
+
 export function computeToDirection(
   from: string,
   movement: Movement,
@@ -35,4 +43,30 @@ export function computeToDirection(
   throw new Error(
     `computeToDirection: "${from}" is not a cardinal direction and no custom leg list was provided`
   );
+}
+
+/**
+ * Inverse of computeToDirection — given a from→to pair, derive the Movement.
+ * Passing `legs` uses the same circular-index logic as computeToDirection.
+ * Without `legs`, falls back to the cardinal reverse lookup.
+ */
+export function computeMovement(
+  from: string,
+  to: string,
+  legs?: string[]
+): Movement {
+  if (legs && legs.length > 0) {
+    const n = legs.length;
+    const fromIdx = legs.indexOf(from);
+    const toIdx = legs.indexOf(to);
+    if (fromIdx === -1) throw new Error(`computeMovement: "${from}" not found in legs`);
+    if (toIdx === -1) throw new Error(`computeMovement: "${to}" not found in legs`);
+    if (toIdx === (fromIdx - 1 + n) % n) return 'left';
+    if (toIdx === (fromIdx + 1) % n) return 'right';
+    return 'straight';
+  }
+  if (CARDINALS_REVERSE[from]?.[to] !== undefined) {
+    return CARDINALS_REVERSE[from][to];
+  }
+  throw new Error(`computeMovement: no path from "${from}" to "${to}"`);
 }

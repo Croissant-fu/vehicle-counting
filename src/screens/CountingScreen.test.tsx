@@ -1,7 +1,9 @@
 import React from 'react';
 import { render, fireEvent, waitFor } from '@testing-library/react-native';
+import { TouchableOpacity, Text } from 'react-native';
 import { Alert } from 'react-native';
 import CountingScreen from './CountingScreen';
+import { Movement } from '../types';
 
 const mockRecord = jest.fn().mockResolvedValue({ id: 1, to_direction: 'S' });
 const mockUndo   = jest.fn().mockResolvedValue(true);
@@ -17,6 +19,21 @@ jest.mock('../modules/session/SessionManager', () => ({
   getSession: jest.fn().mockResolvedValue({ total_count: 1 }),
 }));
 
+// Stub IntersectionDragMap so tests can trigger onDrag without a real gesture
+jest.mock('../components/IntersectionDragMap', () => {
+  const ReactMock = require('react');
+  const { TouchableOpacity: TO, Text: T } = require('react-native');
+  return {
+    __esModule: true,
+    default: ({ onDrag }: { onDrag: (from: string, movement: Movement) => void }) =>
+      ReactMock.createElement(
+        TO,
+        { testID: 'drag-map', onPress: () => onDrag('N', 'straight') },
+        ReactMock.createElement(T, null, 'drag')
+      ),
+  };
+});
+
 const mockSession = {
   id: 'sess_test', location_name: 'Test', intersection_type: '4way',
   time_period: 'am_peak', lat: null, lng: null, custom_legs: null,
@@ -31,9 +48,9 @@ jest.mock('@react-navigation/native', () => ({
 
 beforeEach(() => { jest.clearAllMocks(); });
 
-test('records a count when Straight is pressed', async () => {
+test('records a count when a drag is completed', async () => {
   const { getByTestId } = render(<CountingScreen />);
-  fireEvent.press(getByTestId('dir-straight'));
+  fireEvent.press(getByTestId('drag-map'));
   await waitFor(() => expect(mockRecord).toHaveBeenCalledWith({
     from_direction: 'N',
     movement: 'straight',

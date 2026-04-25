@@ -1,4 +1,4 @@
-import { computeToDirection } from './DirectionCalculator';
+import { computeToDirection, computeMovement } from './DirectionCalculator';
 
 describe('cardinal directions', () => {
   test('N + straight = S', () => expect(computeToDirection('N', 'straight')).toBe('S'));
@@ -27,6 +27,49 @@ describe('error cases', () => {
   test('throws when custom intersection but no legs provided', () => {
     expect(() => computeToDirection('Gate A', 'left')).toThrow('custom leg');
   });
+});
+
+describe('computeMovement — cardinal (inverse of computeToDirection)', () => {
+  test('N→W = left',     () => expect(computeMovement('N', 'W')).toBe('left'));
+  test('N→S = straight', () => expect(computeMovement('N', 'S')).toBe('straight'));
+  test('N→E = right',    () => expect(computeMovement('N', 'E')).toBe('right'));
+  test('S→E = left',     () => expect(computeMovement('S', 'E')).toBe('left'));
+  test('E→N = left',     () => expect(computeMovement('E', 'N')).toBe('left'));
+  test('W→S = left',     () => expect(computeMovement('W', 'S')).toBe('left'));
+
+  test('round-trips with computeToDirection (N+right)', () => {
+    const to = computeToDirection('N', 'right');        // 'E'
+    expect(computeMovement('N', to)).toBe('right');
+  });
+  test('round-trips with computeToDirection (S+left)', () => {
+    const to = computeToDirection('S', 'left');         // 'E'
+    expect(computeMovement('S', to)).toBe('left');
+  });
+});
+
+describe('computeMovement — custom legs (inverse of computeToDirection)', () => {
+  const legs = ['Gate A', 'Gate B', 'Gate C', 'Gate D'];
+
+  test('Gate A → Gate B = right', () =>
+    expect(computeMovement('Gate A', 'Gate B', legs)).toBe('right'));
+  test('Gate A → Gate D = left', () =>
+    expect(computeMovement('Gate A', 'Gate D', legs)).toBe('left'));
+  test('Gate A → Gate C = straight', () =>
+    expect(computeMovement('Gate A', 'Gate C', legs)).toBe('straight'));
+  test('Gate D → Gate A = right (wraps)', () =>
+    expect(computeMovement('Gate D', 'Gate A', legs)).toBe('right'));
+
+  test('round-trips with computeToDirection (Gate B + left)', () => {
+    const to = computeToDirection('Gate B', 'left', legs);
+    expect(computeMovement('Gate B', to, legs)).toBe('left');
+  });
+});
+
+describe('computeMovement — error cases', () => {
+  test('throws for unknown cardinal from→to', () =>
+    expect(() => computeMovement('N', 'X')).toThrow());
+  test('throws when from not in custom legs', () =>
+    expect(() => computeMovement('Z', 'Gate A', ['Gate A', 'Gate B', 'Gate C'])).toThrow());
 });
 
 describe('edge cases', () => {
