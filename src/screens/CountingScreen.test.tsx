@@ -1,9 +1,8 @@
 import React from 'react';
 import { render, fireEvent, waitFor } from '@testing-library/react-native';
-import { TouchableOpacity, Text } from 'react-native';
 import { Alert } from 'react-native';
 import CountingScreen from './CountingScreen';
-import { Movement } from '../types';
+import { Movement, VehicleType } from '../types';
 
 const mockRecord = jest.fn().mockResolvedValue({ id: 1, to_direction: 'S' });
 const mockUndo   = jest.fn().mockResolvedValue(true);
@@ -18,6 +17,11 @@ jest.mock('../modules/session/SessionManager', () => ({
   endSession: jest.fn().mockResolvedValue({}),
   getSession: jest.fn().mockResolvedValue({ total_count: 1 }),
 }));
+jest.mock('../modules/vehicleType/VehicleTypeManager', () => ({
+  getVehicleTypes: jest.fn().mockResolvedValue(['Moto', 'Car', 'Rickshaw', 'Other']),
+  addVehicleType: jest.fn().mockResolvedValue(undefined),
+  deleteVehicleType: jest.fn().mockResolvedValue(undefined),
+}));
 
 // Stub IntersectionDragMap so tests can trigger onDrag without a real gesture
 jest.mock('../components/IntersectionDragMap', () => {
@@ -25,10 +29,10 @@ jest.mock('../components/IntersectionDragMap', () => {
   const { TouchableOpacity: TO, Text: T } = require('react-native');
   return {
     __esModule: true,
-    default: ({ onDrag }: { onDrag: (from: string, movement: Movement) => void }) =>
+    default: ({ onDrag }: { onDrag: (from: string, movement: Movement, vehicleType: VehicleType) => void }) =>
       ReactMock.createElement(
         TO,
-        { testID: 'drag-map', onPress: () => onDrag('N', 'straight') },
+        { testID: 'drag-map', onPress: () => onDrag('N', 'straight', 'moto') },
         ReactMock.createElement(T, null, 'drag')
       ),
   };

@@ -1,6 +1,6 @@
 export type IntersectionType = '4way' | 'tee' | 'midblock' | 'roundabout' | 'custom';
 export type TimePeriod = 'am_peak' | 'pm_peak' | 'off_peak';
-export type VehicleType = 'moto' | 'car' | 'rickshaw' | 'other';
+export type VehicleType = string; // user-defined; defaults: Moto, Car, Rickshaw, Other
 export type Movement = 'left' | 'straight' | 'right';
 
 export interface Session {

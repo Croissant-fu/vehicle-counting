@@ -7,22 +7,18 @@ import { Movement } from '../types';
 
 interface Props {
   legs?: string[] | null;
-  onDrag: (from: string, movement: Movement) => void;
+  vehicleTypes: string[];
+  onDrag: (from: string, movement: Movement, vehicleType: string) => void;
 }
 
-const NODE_RADIUS = 28;
 const CENTER_RADIUS = 10;
 const ARM_THICKNESS = 4;
-const SNAP_THRESHOLD = 70;
-// Fraction of diagram size from center to node center
 const CIRCLE_R = 0.37;
+// Each panel is a square whose side = NODE_SIZE_RATIO × diagramSize.
+// Max value so panels stay inside bounds: 2 × (0.5 − CIRCLE_R) = 0.26.
+// Using 0.25 leaves a small margin.
+const NODE_SIZE_RATIO = 0.25;
 
-/**
- * Compute each leg's position as (rx, ry) fractions of the diagram square.
- * The anchor leg (i=0) is placed at the bottom (90° in screen coords where y↓),
- * then legs are placed clockwise on screen — which matches the researcher's
- * physical left/right when facing into the intersection.
- */
 function computeNodePositions(
   legs: string[],
   anchorIdx: number,
@@ -41,40 +37,76 @@ function computeNodePositions(
   return result;
 }
 
-export default function IntersectionDragMap({ legs, onDrag }: Props) {
+function chunk<T>(arr: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
+export default function IntersectionDragMap({ legs, vehicleTypes, onDrag }: Props) {
   const resolvedLegs = legs && legs.length > 0 ? legs : ['N', 'E', 'S', 'W'];
 
   const [anchorIdx, setAnchorIdx] = useState(0);
-  const [dragFrom, setDragFrom] = useState<string | null>(null);
+  const [dragFrom, setDragFrom] = useState<{ leg: string; vehicleType: string } | null>(null);
   const [dragTo, setDragTo] = useState<string | null>(null);
   const [diagramSize, setDiagramSize] = useState(280);
 
-  // Refs keep PanResponder callbacks current (closures capture first-render values)
-  const dragFromRef = useRef<string | null>(null);
+  const dragFromRef = useRef<{ leg: string; vehicleType: string } | null>(null);
   const dragToRef = useRef<string | null>(null);
   const anchorIdxRef = useRef(0);
   const resolvedLegsRef = useRef(resolvedLegs);
   const diagramSizeRef = useRef(280);
   const onDragRef = useRef(onDrag);
+  const vehicleTypesRef = useRef(vehicleTypes);
 
   anchorIdxRef.current = anchorIdx;
   resolvedLegsRef.current = resolvedLegs;
   diagramSizeRef.current = diagramSize;
   onDragRef.current = onDrag;
+  vehicleTypesRef.current = vehicleTypes;
 
-  function findNearestLeg(touchX: number, touchY: number): string | null {
+  // Detect which leg panel + which vehicle-type cell was touched.
+  // Panels are squares of side `ns` centered at each node position.
+  // Vehicle types are arranged in a 2-column grid filling the panel.
+  function findDragStart(x: number, y: number): { leg: string; vehicleType: string } | null {
     const size = diagramSizeRef.current;
+    const ns = Math.round(size * NODE_SIZE_RATIO);
     const positions = computeNodePositions(resolvedLegsRef.current, anchorIdxRef.current);
-    let minDist = Infinity;
-    let nearest: string | null = null;
+    const types = vehicleTypesRef.current;
+    if (!types.length) return null;
+
     for (const [leg, { rx, ry }] of Object.entries(positions)) {
-      const dist = Math.sqrt((touchX - rx * size) ** 2 + (touchY - ry * size) ** 2);
-      if (dist < SNAP_THRESHOLD && dist < minDist) {
-        minDist = dist;
-        nearest = leg;
+      const cx = rx * size;
+      const cy = ry * size;
+      const dx = x - cx;
+      const dy = y - cy;
+      if (Math.abs(dx) <= ns / 2 && Math.abs(dy) <= ns / 2) {
+        const nCols = 2;
+        const nRows = Math.ceil(types.length / nCols);
+        const relX = dx + ns / 2;
+        const relY = dy + ns / 2;
+        const col = Math.min(nCols - 1, Math.floor(relX / (ns / nCols)));
+        const row = Math.min(nRows - 1, Math.floor(relY / (ns / nRows)));
+        const idx = Math.min(row * nCols + col, types.length - 1);
+        return { leg, vehicleType: types[idx] };
       }
     }
-    return nearest;
+    return null;
+  }
+
+  // Detect which leg panel the touch is currently over (for the TO node).
+  function findNearestLeg(x: number, y: number): string | null {
+    const size = diagramSizeRef.current;
+    const ns = Math.round(size * NODE_SIZE_RATIO);
+    const positions = computeNodePositions(resolvedLegsRef.current, anchorIdxRef.current);
+    for (const [leg, { rx, ry }] of Object.entries(positions)) {
+      const cx = rx * size;
+      const cy = ry * size;
+      if (Math.abs(x - cx) <= ns / 2 && Math.abs(y - cy) <= ns / 2) {
+        return leg;
+      }
+    }
+    return null;
   }
 
   const panResponder = useRef(
@@ -84,7 +116,7 @@ export default function IntersectionDragMap({ legs, onDrag }: Props) {
 
       onPanResponderGrant: (evt) => {
         const { locationX, locationY } = evt.nativeEvent;
-        const from = findNearestLeg(locationX, locationY);
+        const from = findDragStart(locationX, locationY);
         dragFromRef.current = from;
         dragToRef.current = null;
         setDragFrom(from);
@@ -94,7 +126,7 @@ export default function IntersectionDragMap({ legs, onDrag }: Props) {
       onPanResponderMove: (evt) => {
         const { locationX, locationY } = evt.nativeEvent;
         const near = findNearestLeg(locationX, locationY);
-        const to = near !== null && near !== dragFromRef.current ? near : null;
+        const to = near !== null && near !== dragFromRef.current?.leg ? near : null;
         dragToRef.current = to;
         setDragTo(to);
       },
@@ -103,9 +135,8 @@ export default function IntersectionDragMap({ legs, onDrag }: Props) {
         const from = dragFromRef.current;
         const to = dragToRef.current;
         if (from && to) {
-          const currentLegs = resolvedLegsRef.current;
-          const movement = computeMovement(from, to, currentLegs);
-          onDragRef.current(from, movement);
+          const movement = computeMovement(from.leg, to, resolvedLegsRef.current);
+          onDragRef.current(from.leg, movement, from.vehicleType);
         }
         dragFromRef.current = null;
         dragToRef.current = null;
@@ -124,6 +155,8 @@ export default function IntersectionDragMap({ legs, onDrag }: Props) {
 
   const nodePositions = computeNodePositions(resolvedLegs, anchorIdx);
   const half = diagramSize * 0.5;
+  const nodeSize = Math.round(diagramSize * NODE_SIZE_RATIO);
+  const rows = chunk(vehicleTypes, 2);
 
   return (
     <View style={styles.root}>
@@ -145,7 +178,7 @@ export default function IntersectionDragMap({ legs, onDrag }: Props) {
         </View>
       </View>
 
-      {/* Diagram wrapper — measures available space */}
+      {/* Diagram */}
       <View
         style={styles.diagramWrapper}
         onLayout={(e) => {
@@ -167,7 +200,7 @@ export default function IntersectionDragMap({ legs, onDrag }: Props) {
             const armAngle = Math.atan2(dy, dx) * (180 / Math.PI);
             const midX = (half + nx) / 2;
             const midY = (half + ny) / 2;
-            const isActive = dragFrom === leg || dragTo === leg;
+            const isActive = dragFrom?.leg === leg || dragTo === leg;
             return (
               <View
                 key={`arm-${leg}`}
@@ -195,10 +228,10 @@ export default function IntersectionDragMap({ legs, onDrag }: Props) {
             ]}
           />
 
-          {/* Leg nodes */}
+          {/* Leg node panels */}
           {Object.entries(nodePositions).map(([leg, { rx, ry }]) => {
             const isAnchor = leg === resolvedLegs[anchorIdx];
-            const isFrom = dragFrom === leg;
+            const isFrom = dragFrom?.leg === leg;
             const isTo = dragTo === leg;
             return (
               <View
@@ -206,16 +239,58 @@ export default function IntersectionDragMap({ legs, onDrag }: Props) {
                 pointerEvents="none"
                 style={[
                   styles.legNode,
-                  { left: rx * diagramSize - NODE_RADIUS, top: ry * diagramSize - NODE_RADIUS },
+                  {
+                    left: rx * diagramSize - nodeSize / 2,
+                    top: ry * diagramSize - nodeSize / 2,
+                    width: nodeSize,
+                    height: nodeSize,
+                  },
                   isFrom && styles.legNodeFrom,
                   isTo && styles.legNodeTo,
                   !isFrom && !isTo && isAnchor && styles.legNodeAnchor,
                 ]}
               >
-                <Text style={styles.legLabel} numberOfLines={1}>{leg}</Text>
-                {isAnchor && !isFrom && !isTo && (
-                  <Text style={styles.youHint}>you</Text>
-                )}
+                {/* Direction badge — absolute, top-right corner */}
+                <View style={[styles.dirBadge, isAnchor && !isFrom && !isTo && styles.dirBadgeAnchor]}>
+                  <Text style={[styles.dirBadgeText, isAnchor && !isFrom && !isTo && styles.dirBadgeTextAnchor]}>
+                    {leg}{isAnchor ? ' ·' : ''}
+                  </Text>
+                </View>
+
+                {/* Vehicle-type grid — fills entire panel */}
+                <View style={styles.vehicleGrid}>
+                  {rows.map((pair, rowIdx) => (
+                    <View key={rowIdx} style={styles.vehicleRow}>
+                      {pair.map((vt) => {
+                        const isActiveBtn = isFrom && dragFrom?.vehicleType === vt;
+                        return (
+                          <View
+                            key={vt}
+                            style={[
+                              styles.vehicleBtn,
+                              isTo && styles.vehicleBtnTo,
+                              isActiveBtn && styles.vehicleBtnActive,
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.vehicleBtnText,
+                                isTo && styles.vehicleBtnTextTo,
+                                isActiveBtn && styles.vehicleBtnTextActive,
+                              ]}
+                              numberOfLines={2}
+                              adjustsFontSizeToFit
+                            >
+                              {vt}
+                            </Text>
+                          </View>
+                        );
+                      })}
+                      {/* Spacer when last row has only one item */}
+                      {pair.length < 2 && <View style={{ flex: 1 }} />}
+                    </View>
+                  ))}
+                </View>
               </View>
             );
           })}
@@ -225,8 +300,8 @@ export default function IntersectionDragMap({ legs, onDrag }: Props) {
       {/* Contextual hint */}
       <Text style={styles.hint}>
         {dragFrom
-          ? `From ${dragFrom} → drag to exit direction`
-          : 'Drag from any approach to record a vehicle'}
+          ? `${dragFrom.leg} · ${dragFrom.vehicleType} — drag to exit direction`
+          : 'Swipe a vehicle type in any approach to count it'}
       </Text>
     </View>
   );
@@ -291,31 +366,57 @@ const styles = StyleSheet.create({
 
   legNode: {
     position: 'absolute',
-    width: NODE_RADIUS * 2,
-    height: NODE_RADIUS * 2,
-    borderRadius: NODE_RADIUS,
-    backgroundColor: '#1a2535',
+    borderRadius: 10,
+    backgroundColor: '#152030',
     borderWidth: 2,
     borderColor: '#2a3a4a',
-    justifyContent: 'center',
-    alignItems: 'center',
+    overflow: 'hidden',
   },
   legNodeAnchor: { borderColor: '#4f8ef7' },
-  legNodeFrom: { backgroundColor: '#7a3a00', borderColor: '#f97316' },
-  legNodeTo: { backgroundColor: '#0a3a1a', borderColor: '#22c55e' },
+  legNodeFrom: { borderColor: '#f97316', backgroundColor: '#1c1005' },
+  legNodeTo: { borderColor: '#22c55e', backgroundColor: '#0a1c10' },
 
-  legLabel: {
-    color: '#fff',
-    fontSize: 11,
+  dirBadge: {
+    position: 'absolute',
+    top: 4,
+    right: 5,
+    zIndex: 1,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    borderRadius: 4,
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+  },
+  dirBadgeAnchor: { backgroundColor: 'rgba(20,50,120,0.7)' },
+  dirBadgeText: { color: '#99a', fontSize: 9, fontWeight: 'bold', letterSpacing: 0.3 },
+  dirBadgeTextAnchor: { color: '#7aadff' },
+
+  vehicleGrid: {
+    flex: 1,
+    padding: 3,
+    gap: 3,
+  },
+  vehicleRow: {
+    flex: 1,
+    flexDirection: 'row',
+    gap: 3,
+  },
+  vehicleBtn: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 5,
+    backgroundColor: '#0e1c2a',
+  },
+  vehicleBtnActive: { backgroundColor: '#c45800' },
+  vehicleBtnTo: { backgroundColor: '#0c2218' },
+  vehicleBtnText: {
+    color: '#5a7a9a',
+    fontSize: 13,
     fontWeight: 'bold',
     textAlign: 'center',
   },
-  youHint: {
-    color: '#4f8ef7',
-    fontSize: 8,
-    textAlign: 'center',
-    lineHeight: 10,
-  },
+  vehicleBtnTextActive: { color: '#fff' },
+  vehicleBtnTextTo: { color: '#22c55e' },
 
   hint: {
     color: '#555',

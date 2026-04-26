@@ -41,5 +41,19 @@ async function _initSchema(db: SQLite.SQLiteDatabase): Promise<void> {
       vehicle_type   TEXT NOT NULL,
       timestamp      TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS vehicle_types (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      name       TEXT NOT NULL UNIQUE,
+      sort_order INTEGER NOT NULL DEFAULT 0
+    );
+
+    INSERT OR IGNORE INTO vehicle_types (name, sort_order) VALUES
+      ('Moto', 0), ('Car', 1), ('Rickshaw', 2), ('Other', 3);
+
+    CREATE TABLE IF NOT EXISTS app_settings (
+      key   TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
   `);
 }

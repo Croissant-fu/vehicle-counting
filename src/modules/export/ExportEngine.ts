@@ -1,3 +1,4 @@
+import { Alert, Platform } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { utils, write } from 'xlsx';
@@ -5,6 +6,86 @@ import { getDatabase } from '../../db/database';
 import { Session, Count } from '../../types';
 
 type ExportFormat = 'csv' | 'xlsx' | 'json';
+
+const MIME_TYPES: Record<ExportFormat, string> = {
+  csv: 'text/csv',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  json: 'application/json',
+};
+
+const UTIS: Record<ExportFormat, string> = {
+  csv: 'public.comma-separated-values-text',
+  xlsx: 'com.microsoft.excel.xlsx',
+  json: 'public.json',
+};
+
+// Module-level cache so we don't query the DB on every export.
+let _downloadsDirUri: string | null | undefined = undefined;
+
+async function getDownloadsDirUri(): Promise<string | null> {
+  if (_downloadsDirUri !== undefined) return _downloadsDirUri;
+  const db = await getDatabase();
+  const row = await db.getFirstAsync<{ value: string }>(
+    "SELECT value FROM app_settings WHERE key = 'downloads_dir_uri'",
+  );
+  _downloadsDirUri = row?.value ?? null;
+  return _downloadsDirUri;
+}
+
+async function saveDownloadsDirUri(uri: string): Promise<void> {
+  _downloadsDirUri = uri;
+  const db = await getDatabase();
+  await db.runAsync(
+    "INSERT OR REPLACE INTO app_settings (key, value) VALUES ('downloads_dir_uri', ?)",
+    [uri],
+  );
+}
+
+async function clearDownloadsDirUri(): Promise<void> {
+  _downloadsDirUri = null;
+  const db = await getDatabase();
+  await db.runAsync("DELETE FROM app_settings WHERE key = 'downloads_dir_uri'");
+}
+
+// Attempt to save to user's chosen Downloads folder via Storage Access Framework.
+// Returns true if the file was saved successfully.
+async function saveToDownloads(
+  content: string,
+  filename: string,
+  format: ExportFormat,
+  encoding: typeof FileSystem.EncodingType[keyof typeof FileSystem.EncodingType],
+): Promise<boolean> {
+  const saf = (FileSystem as any).StorageAccessFramework;
+  if (!saf) return false;
+
+  const tryWrite = async (dirUri: string): Promise<boolean> => {
+    const fileUri = await saf.createFileAsync(dirUri, filename, MIME_TYPES[format]);
+    await FileSystem.writeAsStringAsync(fileUri, content, { encoding });
+    return true;
+  };
+
+  // Try with stored URI first (no picker needed).
+  const stored = await getDownloadsDirUri();
+  if (stored) {
+    try {
+      return await tryWrite(stored);
+    } catch {
+      // Stored URI may have been revoked — clear it and fall through to re-request.
+      await clearDownloadsDirUri();
+    }
+  }
+
+  // Ask the user to pick the Downloads folder.
+  const result = await saf.requestDirectoryPermissionsAsync();
+  if (!result.granted) return false;
+
+  await saveDownloadsDirUri(result.directoryUri);
+  try {
+    return await tryWrite(result.directoryUri);
+  } catch {
+    return false;
+  }
+}
 
 function slugify(str: string): string {
   return str.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
@@ -55,34 +136,46 @@ function buildXlsx(session: Session, counts: Count[]): string {
 export async function exportSession(
   session: Session,
   counts: Count[],
-  format: ExportFormat
+  format: ExportFormat,
 ): Promise<void> {
   const filename = buildFilename(session, format);
   const path = `${FileSystem.documentDirectory}${filename}`;
 
+  let content: string;
+  let encoding: typeof FileSystem.EncodingType[keyof typeof FileSystem.EncodingType];
+
   if (format === 'csv') {
-    await FileSystem.writeAsStringAsync(path, buildCsv(session, counts), {
-      encoding: FileSystem.EncodingType.UTF8,
-    });
+    content = buildCsv(session, counts);
+    encoding = FileSystem.EncodingType.UTF8;
   } else if (format === 'json') {
-    await FileSystem.writeAsStringAsync(
-      path,
-      JSON.stringify({ session, counts }, null, 2),
-      { encoding: FileSystem.EncodingType.UTF8 }
-    );
+    content = JSON.stringify({ session, counts }, null, 2);
+    encoding = FileSystem.EncodingType.UTF8;
   } else {
-    await FileSystem.writeAsStringAsync(path, buildXlsx(session, counts), {
-      encoding: FileSystem.EncodingType.Base64,
-    });
+    content = buildXlsx(session, counts);
+    encoding = FileSystem.EncodingType.Base64;
   }
 
-  await Sharing.shareAsync(path);
+  // Write to app documents directory (needed for share sheet).
+  await FileSystem.writeAsStringAsync(path, content, { encoding });
+
+  // Save to Downloads folder on Android (prompts folder picker on first use).
+  let savedToDownloads = false;
+  if (Platform.OS === 'android') {
+    savedToDownloads = await saveToDownloads(content, filename, format, encoding);
+  }
+
+  // Open share sheet so user can also send/save elsewhere.
+  await Sharing.shareAsync(path, { mimeType: MIME_TYPES[format], UTI: UTIS[format] });
+
+  if (savedToDownloads) {
+    Alert.alert('Saved to Downloads', `"${filename}" was saved to your Downloads folder.`);
+  }
 }
 
 export async function getSessionCounts(sessionId: string): Promise<Count[]> {
   const db = await getDatabase();
   return db.getAllAsync<Count>(
     `SELECT * FROM counts WHERE session_id = ? ORDER BY timestamp ASC`,
-    [sessionId]
+    [sessionId],
   );
 }
