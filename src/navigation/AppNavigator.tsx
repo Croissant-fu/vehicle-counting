@@ -6,6 +6,7 @@ import SessionSetupScreen from '../screens/SessionSetupScreen';
 import CountingScreen from '../screens/CountingScreen';
 import SessionReviewScreen from '../screens/SessionReviewScreen';
 import { Session } from '../types';
+import { G } from '../theme';
 
 export type RootStackParamList = {
   SessionsList: undefined;
@@ -19,11 +20,36 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 export default function AppNavigator() {
   return (
     <NavigationContainer>
-      <Stack.Navigator initialRouteName="SessionsList">
-        <Stack.Screen name="SessionsList" component={SessionsListScreen} options={{ title: 'My Sessions' }} />
-        <Stack.Screen name="SessionSetup" component={SessionSetupScreen} options={{ title: 'New Session' }} />
-        <Stack.Screen name="Counting" component={CountingScreen} options={{ headerShown: false }} />
-        <Stack.Screen name="SessionReview" component={SessionReviewScreen} options={{ title: 'Session Review' }} />
+      <Stack.Navigator
+        initialRouteName="SessionsList"
+        screenOptions={{
+          headerStyle: { backgroundColor: '#000' },
+          headerTintColor: G.blue,
+          headerTitleStyle: { color: G.text, fontWeight: '700', fontSize: 17 },
+          headerShadowVisible: false,
+          contentStyle: { backgroundColor: G.bg },
+        }}
+      >
+        <Stack.Screen
+          name="SessionsList"
+          component={SessionsListScreen}
+          options={{ title: 'Sessions' }}
+        />
+        <Stack.Screen
+          name="SessionSetup"
+          component={SessionSetupScreen}
+          options={{ title: 'New Session' }}
+        />
+        <Stack.Screen
+          name="Counting"
+          component={CountingScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="SessionReview"
+          component={SessionReviewScreen}
+          options={{ title: 'Review' }}
+        />
       </Stack.Navigator>
     </NavigationContainer>
   );

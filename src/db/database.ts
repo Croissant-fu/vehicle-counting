@@ -56,4 +56,10 @@ async function _initSchema(db: SQLite.SQLiteDatabase): Promise<void> {
       value TEXT NOT NULL
     );
   `);
+  // Migration: add color_tag column to existing installs
+  try {
+    await db.execAsync(`ALTER TABLE sessions ADD COLUMN color_tag TEXT;`);
+  } catch {
+    // column already exists — safe to ignore
+  }
 }

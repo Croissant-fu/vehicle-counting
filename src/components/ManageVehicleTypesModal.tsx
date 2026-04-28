@@ -3,6 +3,8 @@ import {
   Modal, View, Text, TextInput, TouchableOpacity,
   FlatList, StyleSheet, KeyboardAvoidingView, Platform,
 } from 'react-native';
+import { BlurView } from 'expo-blur';
+import { G } from '../theme';
 
 interface Props {
   visible: boolean;
@@ -30,7 +32,9 @@ export default function ManageVehicleTypesModal({
         style={styles.overlay}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <View style={styles.sheet}>
+        <BlurView intensity={G.blurIntensity} tint="dark" style={styles.sheet}>
+          <View style={styles.handle} />
+
           <View style={styles.header}>
             <Text style={styles.title}>Vehicle Types</Text>
             <TouchableOpacity style={styles.doneBtn} onPress={onClose}>
@@ -42,8 +46,8 @@ export default function ManageVehicleTypesModal({
             data={vehicleTypes}
             keyExtractor={(item) => item}
             style={styles.list}
-            renderItem={({ item }) => (
-              <View style={styles.row}>
+            renderItem={({ item, index }) => (
+              <View style={[styles.row, index < vehicleTypes.length - 1 && styles.rowBorder]}>
                 <Text style={styles.typeName}>{item}</Text>
                 <TouchableOpacity
                   style={[styles.deleteBtn, vehicleTypes.length <= 1 && styles.deleteBtnDisabled]}
@@ -54,14 +58,13 @@ export default function ManageVehicleTypesModal({
                 </TouchableOpacity>
               </View>
             )}
-            ItemSeparatorComponent={() => <View style={styles.separator} />}
           />
 
           <View style={styles.addRow}>
             <TextInput
               style={styles.input}
               placeholder="New type name…"
-              placeholderTextColor="#555"
+              placeholderTextColor={G.textMute}
               value={draft}
               onChangeText={setDraft}
               onSubmitEditing={handleAdd}
@@ -75,7 +78,7 @@ export default function ManageVehicleTypesModal({
               <Text style={styles.addBtnText}>Add</Text>
             </TouchableOpacity>
           </View>
-        </View>
+        </BlurView>
       </KeyboardAvoidingView>
     </Modal>
   );
@@ -83,68 +86,54 @@ export default function ManageVehicleTypesModal({
 
 const styles = StyleSheet.create({
   overlay: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    flex: 1, justifyContent: 'flex-end',
   },
   sheet: {
-    backgroundColor: '#141d27',
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    maxHeight: '70%',
-    paddingBottom: 24,
+    borderTopLeftRadius: G.radius, borderTopRightRadius: G.radius,
+    borderWidth: 1, borderBottomWidth: 0, borderColor: G.rim1,
+    maxHeight: '70%', paddingBottom: 28, overflow: 'hidden',
+  },
+  handle: {
+    alignSelf: 'center', width: 36, height: 4,
+    backgroundColor: G.rim2, borderRadius: 2, marginTop: 12, marginBottom: 4,
   },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#1e2a3a',
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 18, paddingVertical: 14,
+    borderBottomWidth: 1, borderBottomColor: G.rim0,
   },
-  title: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
+  title: { color: G.text, fontSize: 16, fontWeight: '700' },
   doneBtn: { paddingHorizontal: 12, paddingVertical: 6 },
-  doneBtnText: { color: '#4f8ef7', fontWeight: '600', fontSize: 14 },
+  doneBtnText: { color: G.blue, fontWeight: '600', fontSize: 14 },
   list: { flexGrow: 0 },
   row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 18, paddingVertical: 14,
   },
-  typeName: { flex: 1, color: '#fff', fontSize: 15 },
-  separator: { height: 1, backgroundColor: '#1e2a3a', marginLeft: 16 },
+  rowBorder: { borderBottomWidth: 1, borderBottomColor: G.rim0 },
+  typeName: { flex: 1, color: G.text, fontSize: 15 },
   deleteBtn: {
-    width: 32, height: 32,
-    borderRadius: 16,
-    backgroundColor: '#3a1a1a',
-    justifyContent: 'center',
-    alignItems: 'center',
+    width: 30, height: 30, borderRadius: 15,
+    backgroundColor: G.redGlass, borderWidth: 1, borderColor: G.redRim,
+    justifyContent: 'center', alignItems: 'center',
   },
-  deleteBtnDisabled: { backgroundColor: '#1e2a3a' },
-  deleteBtnText: { color: '#f44336', fontSize: 18, lineHeight: 20 },
+  deleteBtnDisabled: { backgroundColor: G.glass0, borderColor: G.rim0 },
+  deleteBtnText: { color: G.red, fontSize: 18, lineHeight: 20 },
   addRow: {
-    flexDirection: 'row',
-    gap: 10,
-    paddingHorizontal: 16,
-    paddingTop: 12,
+    flexDirection: 'row', gap: 10,
+    paddingHorizontal: 18, paddingTop: 14,
   },
   input: {
-    flex: 1,
-    backgroundColor: '#1e2a3a',
-    color: '#fff',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 8,
-    fontSize: 14,
+    flex: 1, backgroundColor: G.glass2, color: G.text,
+    paddingHorizontal: 14, paddingVertical: 11,
+    borderRadius: G.radiusSm, fontSize: 14,
+    borderWidth: 1, borderColor: G.rim1,
   },
   addBtn: {
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-    backgroundColor: '#4f8ef7',
-    borderRadius: 8,
-    justifyContent: 'center',
+    paddingHorizontal: 18, paddingVertical: 11,
+    backgroundColor: G.blueGlass, borderRadius: G.radiusSm,
+    borderWidth: 1, borderColor: G.blueRim, justifyContent: 'center',
   },
-  addBtnDisabled: { backgroundColor: '#2a3a5a' },
-  addBtnText: { color: '#fff', fontWeight: 'bold', fontSize: 14 },
+  addBtnDisabled: { backgroundColor: G.glass0, borderColor: G.rim0 },
+  addBtnText: { color: G.blue, fontWeight: '700', fontSize: 14 },
 });

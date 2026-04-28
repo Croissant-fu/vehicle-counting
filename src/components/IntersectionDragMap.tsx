@@ -4,20 +4,21 @@ import {
 } from 'react-native';
 import { computeMovement } from '../modules/direction/DirectionCalculator';
 import { Movement } from '../types';
+import { G } from '../theme';
 
 interface Props {
   legs?: string[] | null;
   vehicleTypes: string[];
   onDrag: (from: string, movement: Movement, vehicleType: string) => void;
+  paused?: boolean;
 }
 
-const CENTER_RADIUS = 10;
-const ARM_THICKNESS = 4;
-const CIRCLE_R = 0.37;
-// Each panel is a square whose side = NODE_SIZE_RATIO × diagramSize.
-// Max value so panels stay inside bounds: 2 × (0.5 − CIRCLE_R) = 0.26.
-// Using 0.25 leaves a small margin.
-const NODE_SIZE_RATIO = 0.25;
+const CENTER_RADIUS = 9;
+const ARM_THICKNESS = 3;
+// CIRCLE_R = 0.32, NODE_SIZE_RATIO = 0.36: button area ≈ 2× original.
+// Panels touch the diagram edge exactly; adjacent panels clear by ~30 px on a 280 px diagram.
+const CIRCLE_R = 0.32;
+const NODE_SIZE_RATIO = 0.36;
 
 function computeNodePositions(
   legs: string[],
@@ -43,7 +44,7 @@ function chunk<T>(arr: T[], size: number): T[][] {
   return out;
 }
 
-export default function IntersectionDragMap({ legs, vehicleTypes, onDrag }: Props) {
+export default function IntersectionDragMap({ legs, vehicleTypes, onDrag, paused }: Props) {
   const resolvedLegs = legs && legs.length > 0 ? legs : ['N', 'E', 'S', 'W'];
 
   const [anchorIdx, setAnchorIdx] = useState(0);
@@ -51,26 +52,25 @@ export default function IntersectionDragMap({ legs, vehicleTypes, onDrag }: Prop
   const [dragTo, setDragTo] = useState<string | null>(null);
   const [diagramSize, setDiagramSize] = useState(280);
 
-  const dragFromRef = useRef<{ leg: string; vehicleType: string } | null>(null);
-  const dragToRef = useRef<string | null>(null);
-  const anchorIdxRef = useRef(0);
+  const dragFromRef   = useRef<{ leg: string; vehicleType: string } | null>(null);
+  const dragToRef     = useRef<string | null>(null);
+  const anchorIdxRef  = useRef(0);
   const resolvedLegsRef = useRef(resolvedLegs);
-  const diagramSizeRef = useRef(280);
-  const onDragRef = useRef(onDrag);
+  const diagramSizeRef  = useRef(280);
+  const onDragRef       = useRef(onDrag);
   const vehicleTypesRef = useRef(vehicleTypes);
+  const pausedRef       = useRef(false);
 
-  anchorIdxRef.current = anchorIdx;
+  anchorIdxRef.current  = anchorIdx;
   resolvedLegsRef.current = resolvedLegs;
-  diagramSizeRef.current = diagramSize;
-  onDragRef.current = onDrag;
+  diagramSizeRef.current  = diagramSize;
+  onDragRef.current       = onDrag;
   vehicleTypesRef.current = vehicleTypes;
+  pausedRef.current       = paused ?? false;
 
-  // Detect which leg panel + which vehicle-type cell was touched.
-  // Panels are squares of side `ns` centered at each node position.
-  // Vehicle types are arranged in a 2-column grid filling the panel.
   function findDragStart(x: number, y: number): { leg: string; vehicleType: string } | null {
     const size = diagramSizeRef.current;
-    const ns = Math.round(size * NODE_SIZE_RATIO);
+    const ns   = Math.round(size * NODE_SIZE_RATIO);
     const positions = computeNodePositions(resolvedLegsRef.current, anchorIdxRef.current);
     const types = vehicleTypesRef.current;
     if (!types.length) return null;
@@ -94,17 +94,12 @@ export default function IntersectionDragMap({ legs, vehicleTypes, onDrag }: Prop
     return null;
   }
 
-  // Detect which leg panel the touch is currently over (for the TO node).
   function findNearestLeg(x: number, y: number): string | null {
     const size = diagramSizeRef.current;
-    const ns = Math.round(size * NODE_SIZE_RATIO);
+    const ns   = Math.round(size * NODE_SIZE_RATIO);
     const positions = computeNodePositions(resolvedLegsRef.current, anchorIdxRef.current);
     for (const [leg, { rx, ry }] of Object.entries(positions)) {
-      const cx = rx * size;
-      const cy = ry * size;
-      if (Math.abs(x - cx) <= ns / 2 && Math.abs(y - cy) <= ns / 2) {
-        return leg;
-      }
+      if (Math.abs(x - rx * size) <= ns / 2 && Math.abs(y - ry * size) <= ns / 2) return leg;
     }
     return null;
   }
@@ -112,13 +107,14 @@ export default function IntersectionDragMap({ legs, vehicleTypes, onDrag }: Prop
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder:  () => true,
 
       onPanResponderGrant: (evt) => {
+        if (pausedRef.current) return;
         const { locationX, locationY } = evt.nativeEvent;
         const from = findDragStart(locationX, locationY);
         dragFromRef.current = from;
-        dragToRef.current = null;
+        dragToRef.current   = null;
         setDragFrom(from);
         setDragTo(null);
       },
@@ -126,27 +122,27 @@ export default function IntersectionDragMap({ legs, vehicleTypes, onDrag }: Prop
       onPanResponderMove: (evt) => {
         const { locationX, locationY } = evt.nativeEvent;
         const near = findNearestLeg(locationX, locationY);
-        const to = near !== null && near !== dragFromRef.current?.leg ? near : null;
+        const to   = near !== null && near !== dragFromRef.current?.leg ? near : null;
         dragToRef.current = to;
         setDragTo(to);
       },
 
       onPanResponderRelease: () => {
         const from = dragFromRef.current;
-        const to = dragToRef.current;
+        const to   = dragToRef.current;
         if (from && to) {
           const movement = computeMovement(from.leg, to, resolvedLegsRef.current);
           onDragRef.current(from.leg, movement, from.vehicleType);
         }
         dragFromRef.current = null;
-        dragToRef.current = null;
+        dragToRef.current   = null;
         setDragFrom(null);
         setDragTo(null);
       },
 
       onPanResponderTerminate: () => {
         dragFromRef.current = null;
-        dragToRef.current = null;
+        dragToRef.current   = null;
         setDragFrom(null);
         setDragTo(null);
       },
@@ -154,9 +150,9 @@ export default function IntersectionDragMap({ legs, vehicleTypes, onDrag }: Prop
   ).current;
 
   const nodePositions = computeNodePositions(resolvedLegs, anchorIdx);
-  const half = diagramSize * 0.5;
-  const nodeSize = Math.round(diagramSize * NODE_SIZE_RATIO);
-  const rows = chunk(vehicleTypes, 2);
+  const half      = diagramSize * 0.5;
+  const nodeSize  = Math.round(diagramSize * NODE_SIZE_RATIO);
+  const rows      = chunk(vehicleTypes, 2);
 
   return (
     <View style={styles.root}>
@@ -182,8 +178,8 @@ export default function IntersectionDragMap({ legs, vehicleTypes, onDrag }: Prop
       <View
         style={styles.diagramWrapper}
         onLayout={(e) => {
-          const { width, height } = e.nativeEvent.layout;
-          setDiagramSize(Math.min(width, height) * 0.98);
+          const { width, height: h } = e.nativeEvent.layout;
+          setDiagramSize(Math.min(width, h) * 0.98);
         }}
       >
         <View
@@ -196,7 +192,7 @@ export default function IntersectionDragMap({ legs, vehicleTypes, onDrag }: Prop
             const ny = ry * diagramSize;
             const dx = nx - half;
             const dy = ny - half;
-            const armLen = Math.sqrt(dx * dx + dy * dy);
+            const armLen   = Math.sqrt(dx * dx + dy * dy);
             const armAngle = Math.atan2(dy, dx) * (180 / Math.PI);
             const midX = (half + nx) / 2;
             const midY = (half + ny) / 2;
@@ -209,7 +205,7 @@ export default function IntersectionDragMap({ legs, vehicleTypes, onDrag }: Prop
                   styles.arm,
                   {
                     left: midX - armLen / 2,
-                    top: midY - ARM_THICKNESS / 2,
+                    top:  midY - ARM_THICKNESS / 2,
                     width: armLen,
                     transform: [{ rotate: `${armAngle}deg` }],
                   },
@@ -231,8 +227,8 @@ export default function IntersectionDragMap({ legs, vehicleTypes, onDrag }: Prop
           {/* Leg node panels */}
           {Object.entries(nodePositions).map(([leg, { rx, ry }]) => {
             const isAnchor = leg === resolvedLegs[anchorIdx];
-            const isFrom = dragFrom?.leg === leg;
-            const isTo = dragTo === leg;
+            const isFrom   = dragFrom?.leg === leg;
+            const isTo     = dragTo === leg;
             return (
               <View
                 key={`node-${leg}`}
@@ -240,24 +236,24 @@ export default function IntersectionDragMap({ legs, vehicleTypes, onDrag }: Prop
                 style={[
                   styles.legNode,
                   {
-                    left: rx * diagramSize - nodeSize / 2,
-                    top: ry * diagramSize - nodeSize / 2,
-                    width: nodeSize,
+                    left:   rx * diagramSize - nodeSize / 2,
+                    top:    ry * diagramSize - nodeSize / 2,
+                    width:  nodeSize,
                     height: nodeSize,
                   },
-                  isFrom && styles.legNodeFrom,
-                  isTo && styles.legNodeTo,
+                  isFrom   && styles.legNodeFrom,
+                  isTo     && styles.legNodeTo,
                   !isFrom && !isTo && isAnchor && styles.legNodeAnchor,
                 ]}
               >
-                {/* Direction badge — absolute, top-right corner */}
+                {/* Direction badge */}
                 <View style={[styles.dirBadge, isAnchor && !isFrom && !isTo && styles.dirBadgeAnchor]}>
                   <Text style={[styles.dirBadgeText, isAnchor && !isFrom && !isTo && styles.dirBadgeTextAnchor]}>
                     {leg}{isAnchor ? ' ·' : ''}
                   </Text>
                 </View>
 
-                {/* Vehicle-type grid — fills entire panel */}
+                {/* Vehicle-type grid */}
                 <View style={styles.vehicleGrid}>
                   {rows.map((pair, rowIdx) => (
                     <View key={rowIdx} style={styles.vehicleRow}>
@@ -268,14 +264,14 @@ export default function IntersectionDragMap({ legs, vehicleTypes, onDrag }: Prop
                             key={vt}
                             style={[
                               styles.vehicleBtn,
-                              isTo && styles.vehicleBtnTo,
+                              isTo        && styles.vehicleBtnTo,
                               isActiveBtn && styles.vehicleBtnActive,
                             ]}
                           >
                             <Text
                               style={[
                                 styles.vehicleBtnText,
-                                isTo && styles.vehicleBtnTextTo,
+                                isTo        && styles.vehicleBtnTextTo,
                                 isActiveBtn && styles.vehicleBtnTextActive,
                               ]}
                               numberOfLines={2}
@@ -286,7 +282,6 @@ export default function IntersectionDragMap({ legs, vehicleTypes, onDrag }: Prop
                           </View>
                         );
                       })}
-                      {/* Spacer when last row has only one item */}
                       {pair.length < 2 && <View style={{ flex: 1 }} />}
                     </View>
                   ))}
@@ -294,6 +289,13 @@ export default function IntersectionDragMap({ legs, vehicleTypes, onDrag }: Prop
               </View>
             );
           })}
+
+          {/* Paused overlay */}
+          {paused && (
+            <View pointerEvents="none" style={styles.pausedOverlay}>
+              <Text style={styles.pausedText}>PAUSED</Text>
+            </View>
+          )}
         </View>
       </View>
 
@@ -301,7 +303,9 @@ export default function IntersectionDragMap({ legs, vehicleTypes, onDrag }: Prop
       <Text style={styles.hint}>
         {dragFrom
           ? `${dragFrom.leg} · ${dragFrom.vehicleType} — drag to exit direction`
-          : 'Swipe a vehicle type in any approach to count it'}
+          : paused
+            ? 'Tap ▶ to resume counting'
+            : 'Swipe a vehicle type in any approach to count it'}
       </Text>
     </View>
   );
@@ -311,116 +315,85 @@ const styles = StyleSheet.create({
   root: { flex: 1, gap: 8 },
 
   anchorRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    flexWrap: 'wrap',
+    flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap',
   },
   anchorLabel: {
-    color: '#888',
-    fontSize: 11,
-    fontWeight: 'bold',
-    letterSpacing: 1,
+    color: G.textMute, fontSize: 10, fontWeight: '700', letterSpacing: 1.2,
   },
   anchorBtns: { flexDirection: 'row', gap: 6, flex: 1, flexWrap: 'wrap' },
   anchorBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#2a3a4a',
-    backgroundColor: '#141d27',
+    paddingHorizontal: 12, paddingVertical: 6,
+    borderRadius: G.radiusSm, borderWidth: 1, borderColor: G.rim1,
+    backgroundColor: G.glass1,
   },
-  anchorBtnActive: { borderColor: '#4f8ef7', backgroundColor: '#1a2d50' },
-  anchorBtnText: { color: '#555', fontSize: 12, fontWeight: 'bold' },
-  anchorBtnTextActive: { color: '#4f8ef7' },
+  anchorBtnActive: { borderColor: G.blueRim, backgroundColor: G.blueGlass },
+  anchorBtnText: { color: G.textMute, fontSize: 12, fontWeight: '700' },
+  anchorBtnTextActive: { color: G.blue },
 
-  diagramWrapper: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  diagramWrapper: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   diagram: {
     position: 'relative',
-    backgroundColor: '#0d1117',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#1e2a3a',
+    backgroundColor: G.glass0,
+    borderRadius: G.radius,
+    borderWidth: 1, borderColor: G.rim1,
+    overflow: 'hidden',
   },
 
   arm: {
-    position: 'absolute',
-    height: ARM_THICKNESS,
-    backgroundColor: '#1e2a3a',
-    borderRadius: 2,
+    position: 'absolute', height: ARM_THICKNESS,
+    backgroundColor: G.rim0, borderRadius: 2,
   },
-  armActive: { backgroundColor: '#2a3a5a' },
+  armActive: { backgroundColor: G.rim2 },
 
   centerDot: {
     position: 'absolute',
-    width: CENTER_RADIUS * 2,
-    height: CENTER_RADIUS * 2,
+    width: CENTER_RADIUS * 2, height: CENTER_RADIUS * 2,
     borderRadius: CENTER_RADIUS,
-    backgroundColor: '#2a3a4a',
+    backgroundColor: G.glass3, borderWidth: 1, borderColor: G.rim1,
   },
 
   legNode: {
-    position: 'absolute',
-    borderRadius: 10,
-    backgroundColor: '#152030',
-    borderWidth: 2,
-    borderColor: '#2a3a4a',
+    position: 'absolute', borderRadius: G.radiusXs,
+    backgroundColor: G.glass1, borderWidth: 1.5, borderColor: G.rim1,
     overflow: 'hidden',
   },
-  legNodeAnchor: { borderColor: '#4f8ef7' },
-  legNodeFrom: { borderColor: '#f97316', backgroundColor: '#1c1005' },
-  legNodeTo: { borderColor: '#22c55e', backgroundColor: '#0a1c10' },
+  legNodeAnchor: { borderColor: G.blueRim,   backgroundColor: G.blueGlass },
+  legNodeFrom:   { borderColor: G.orangeRim,  backgroundColor: G.orangeGlass },
+  legNodeTo:     { borderColor: G.greenRim,   backgroundColor: G.greenGlass },
 
   dirBadge: {
-    position: 'absolute',
-    top: 4,
-    right: 5,
-    zIndex: 1,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    borderRadius: 4,
-    paddingHorizontal: 4,
-    paddingVertical: 1,
+    position: 'absolute', top: 4, right: 4, zIndex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)', borderRadius: 4,
+    paddingHorizontal: 4, paddingVertical: 1,
   },
-  dirBadgeAnchor: { backgroundColor: 'rgba(20,50,120,0.7)' },
-  dirBadgeText: { color: '#99a', fontSize: 9, fontWeight: 'bold', letterSpacing: 0.3 },
-  dirBadgeTextAnchor: { color: '#7aadff' },
+  dirBadgeAnchor: { backgroundColor: 'rgba(10,132,255,0.25)' },
+  dirBadgeText: { color: G.textMute, fontSize: 9, fontWeight: '700', letterSpacing: 0.3 },
+  dirBadgeTextAnchor: { color: G.blue },
 
-  vehicleGrid: {
-    flex: 1,
-    padding: 3,
-    gap: 3,
-  },
-  vehicleRow: {
-    flex: 1,
-    flexDirection: 'row',
-    gap: 3,
-  },
+  vehicleGrid: { flex: 1, padding: 2, gap: 2 },
+  vehicleRow:  { flex: 1, flexDirection: 'row', gap: 2 },
   vehicleBtn: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderRadius: 5,
-    backgroundColor: '#0e1c2a',
+    flex: 1, justifyContent: 'center', alignItems: 'center',
+    borderRadius: G.radiusXs - 2,
+    backgroundColor: G.glass0,
+    borderWidth: 1, borderColor: G.rim0,
   },
-  vehicleBtnActive: { backgroundColor: '#c45800' },
-  vehicleBtnTo: { backgroundColor: '#0c2218' },
+  vehicleBtnActive: { backgroundColor: G.orangeGlass, borderColor: G.orangeRim },
+  vehicleBtnTo:     { backgroundColor: G.greenGlass,  borderColor: G.greenRim },
   vehicleBtnText: {
-    color: '#5a7a9a',
-    fontSize: 13,
-    fontWeight: 'bold',
-    textAlign: 'center',
+    color: G.textSub, fontSize: 12, fontWeight: '700', textAlign: 'center',
   },
-  vehicleBtnTextActive: { color: '#fff' },
-  vehicleBtnTextTo: { color: '#22c55e' },
+  vehicleBtnTextActive: { color: G.orange },
+  vehicleBtnTextTo:     { color: G.green },
 
-  hint: {
-    color: '#555',
-    fontSize: 11,
-    textAlign: 'center',
+  pausedOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    justifyContent: 'center', alignItems: 'center',
   },
+  pausedText: {
+    color: G.orange, fontSize: 18, fontWeight: '700', letterSpacing: 3,
+  },
+
+  hint: { color: G.textMute, fontSize: 11, textAlign: 'center' },
 });

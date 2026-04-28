@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet, Alert,
+  View, Text, TouchableOpacity, StyleSheet, Alert, useWindowDimensions,
 } from 'react-native';
+import { BlurView } from 'expo-blur';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -17,6 +18,7 @@ import ManageVehicleTypesModal from '../components/ManageVehicleTypesModal';
 import { useResponsiveLayout } from '../hooks/useResponsiveLayout';
 import { Session, Movement } from '../types';
 import { RootStackParamList } from '../navigation/AppNavigator';
+import { G } from '../theme';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Counting'>;
 type Route = RouteProp<RootStackParamList, 'Counting'>;
@@ -33,17 +35,21 @@ export default function CountingScreen() {
   const { params } = useRoute<Route>();
   const session: Session = params.session;
   const { isTablet } = useResponsiveLayout();
+  const { width, height } = useWindowDimensions();
+  const isLandscape = width > height;
 
   const engineRef = useRef(new CounterEngine(session));
   const [total, setTotal] = useState(session.total_count);
   const [elapsed, setElapsed] = useState(0);
+  const [paused, setPaused] = useState(false);
   const [vehicleTypes, setVehicleTypes] = useState<string[]>(['Moto', 'Car', 'Rickshaw', 'Other']);
   const [manageVisible, setManageVisible] = useState(false);
 
   useEffect(() => {
+    if (paused) return;
     const interval = setInterval(() => setElapsed((e) => e + 1), 1000);
     return () => clearInterval(interval);
-  }, []);
+  }, [paused]);
 
   const loadVehicleTypes = useCallback(async () => {
     const types = await getVehicleTypes();
@@ -94,35 +100,42 @@ export default function CountingScreen() {
   };
 
   const map = (
-    <>
-      <IntersectionDragMap
-        legs={session.custom_legs}
-        vehicleTypes={vehicleTypes}
-        onDrag={handleDrag}
-      />
-      <UndoBar total={total} onUndo={handleUndo} />
-    </>
+    <IntersectionDragMap
+      legs={session.custom_legs}
+      vehicleTypes={vehicleTypes}
+      onDrag={handleDrag}
+      paused={paused}
+    />
   );
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
+      <BlurView intensity={G.blurIntensity} tint="dark" style={styles.header}>
         <Text style={styles.locationName} numberOfLines={1}>{session.location_name}</Text>
-        <Text style={styles.timer}>{formatElapsed(elapsed)}</Text>
+        <Text style={[styles.timer, paused && styles.timerPaused]}>{formatElapsed(elapsed)}</Text>
+        <TouchableOpacity style={styles.pauseBtn} onPress={() => setPaused((p) => !p)}>
+          <Text style={styles.pauseBtnText}>{paused ? '▶' : '⏸'}</Text>
+        </TouchableOpacity>
         <TouchableOpacity style={styles.manageBtn} onPress={() => setManageVisible(true)}>
           <Text style={styles.manageBtnText}>⚙</Text>
         </TouchableOpacity>
         <TouchableOpacity testID="end-session-btn" style={styles.endBtn} onPress={handleEndSession}>
           <Text style={styles.endBtnText}>■</Text>
         </TouchableOpacity>
-      </View>
+      </BlurView>
 
-      {isTablet ? (
-        <View style={styles.tabletLayout}>
-          <View style={styles.tabletMain}>{map}</View>
+      {isLandscape || isTablet ? (
+        <View style={styles.landscapeLayout}>
+          <View style={styles.landscapeMap}>{map}</View>
+          <View style={styles.landscapeSide}>
+            <UndoBar total={total} onUndo={handleUndo} />
+          </View>
         </View>
       ) : (
-        <View style={styles.phoneLayout}>{map}</View>
+        <View style={styles.phoneLayout}>
+          {map}
+          <UndoBar total={total} onUndo={handleUndo} />
+        </View>
       )}
 
       <ManageVehicleTypesModal
@@ -137,18 +150,44 @@ export default function CountingScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0d1117' },
+  container: { flex: 1, backgroundColor: G.bg },
+
   header: {
-    flexDirection: 'row', alignItems: 'center', padding: 12,
-    borderBottomWidth: 1, borderBottomColor: '#1e2a3a',
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 14, paddingVertical: 10,
+    borderBottomWidth: 1, borderBottomColor: G.rim1,
   },
-  locationName: { flex: 1, color: '#4f8ef7', fontWeight: 'bold', fontSize: 14 },
-  timer: { color: '#888', fontSize: 13, marginHorizontal: 8 },
-  manageBtn: { padding: 6, marginRight: 6, backgroundColor: '#1e2a3a', borderRadius: 6 },
-  manageBtnText: { color: '#aaa', fontSize: 16 },
-  endBtn: { padding: 6, backgroundColor: '#3a1a1a', borderRadius: 6 },
-  endBtnText: { color: '#f44336', fontSize: 16 },
+  locationName: { flex: 1, color: G.blue, fontWeight: '700', fontSize: 14 },
+  timer: { color: G.textSub, fontSize: 13, marginHorizontal: 8, fontVariant: ['tabular-nums'] },
+  timerPaused: { color: G.orange },
+
+  pauseBtn: {
+    padding: 7, marginRight: 6,
+    backgroundColor: G.glass2, borderRadius: G.radiusXs,
+    borderWidth: 1, borderColor: G.rim1,
+  },
+  pauseBtnText: { color: G.blue, fontSize: 15 },
+
+  manageBtn: {
+    padding: 7, marginRight: 6,
+    backgroundColor: G.glass2, borderRadius: G.radiusXs,
+    borderWidth: 1, borderColor: G.rim1,
+  },
+  manageBtnText: { color: G.textSub, fontSize: 15 },
+
+  endBtn: {
+    padding: 7,
+    backgroundColor: G.redGlass, borderRadius: G.radiusXs,
+    borderWidth: 1, borderColor: G.redRim,
+  },
+  endBtnText: { color: G.red, fontSize: 15 },
+
   phoneLayout: { flex: 1, padding: 16, gap: 12 },
-  tabletLayout: { flex: 1 },
-  tabletMain: { flex: 1, padding: 16, gap: 12 },
+
+  landscapeLayout: { flex: 1, flexDirection: 'row' },
+  landscapeMap: { flex: 1, padding: 12 },
+  landscapeSide: {
+    width: 160, padding: 12, justifyContent: 'flex-end',
+    borderLeftWidth: 1, borderLeftColor: G.rim1,
+  },
 });

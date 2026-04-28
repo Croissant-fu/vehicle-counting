@@ -30,6 +30,7 @@ function deserializeSession(row: Record<string, unknown>): Session {
     ended_at:          row.ended_at as string | null,
     total_count:       Number(row.total_count),
     custom_legs,
+    color_tag:         (row.color_tag as string | null) ?? null,
   };
 }
 
@@ -46,6 +47,7 @@ export async function createSession(input: CreateSessionInput): Promise<Session>
     started_at: new Date().toISOString(),
     ended_at: null,
     total_count: 0,
+    color_tag: null,
   };
   await db.runAsync(
     `INSERT INTO sessions
@@ -105,5 +107,30 @@ export async function decrementSessionCount(sessionId: string): Promise<void> {
   await db.runAsync(
     `UPDATE sessions SET total_count = MAX(0, total_count - 1) WHERE id = ?`,
     [sessionId]
+  );
+}
+
+export async function deleteSession(sessionId: string): Promise<void> {
+  const db = await getDatabase();
+  await db.runAsync(`DELETE FROM counts WHERE session_id = ?`, [sessionId]);
+  await db.runAsync(`DELETE FROM sessions WHERE id = ?`, [sessionId]);
+}
+
+export async function updateSessionColorTag(
+  sessionId: string,
+  colorTag: string | null,
+): Promise<void> {
+  const db = await getDatabase();
+  await db.runAsync(
+    `UPDATE sessions SET color_tag = ? WHERE id = ?`,
+    [colorTag, sessionId],
+  );
+}
+
+export async function renameSession(sessionId: string, newName: string): Promise<void> {
+  const db = await getDatabase();
+  await db.runAsync(
+    `UPDATE sessions SET location_name = ? WHERE id = ?`,
+    [newName.trim(), sessionId],
   );
 }

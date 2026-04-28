@@ -14,6 +14,7 @@ export interface Session {
   started_at: string;                // ISO 8601
   ended_at: string | null;
   total_count: number;
+  color_tag: string | null;          // macOS-style color label hex, or null
 }
 
 export interface Count {
