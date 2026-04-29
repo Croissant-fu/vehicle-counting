@@ -2,7 +2,6 @@ import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import {
   View, Text, TouchableOpacity, StyleSheet, Alert, useWindowDimensions,
 } from 'react-native';
-
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -10,6 +9,9 @@ import type { RouteProp } from '@react-navigation/native';
 import { CounterEngine } from '../modules/counter/CounterEngine';
 import { endSession, getSession } from '../modules/session/SessionManager';
 import { getVehicleTypes, addVehicleType, deleteVehicleType } from '../modules/vehicleType/VehicleTypeManager';
+import {
+  addPedestrianCount, undoLastPedestrianCount, countSessionPedestrians,
+} from '../modules/pedestrian/PedestrianManager';
 import UndoBar from '../components/UndoBar';
 import IntersectionDragMap from '../components/IntersectionDragMap';
 import ManageVehicleTypesModal from '../components/ManageVehicleTypesModal';
@@ -41,12 +43,30 @@ export default function CountingScreen() {
   const styles = useMemo(() => createStyles(G), [G]);
 
   const engineRef = useRef(new CounterEngine(session));
-  const [total, setTotal]         = useState(session.total_count);
-  const [elapsed, setElapsed]     = useState(0);
-  const [paused, setPaused]       = useState(false);
+  const [total,        setTotal]        = useState(session.total_count);
+  const [elapsed,      setElapsed]      = useState(0);
+  const [paused,       setPaused]       = useState(false);
   const [vehicleTypes, setVehicleTypes] = useState<string[]>(['Moto', 'Car', 'Rickshaw', 'Other']);
   const [manageVisible, setManageVisible] = useState(false);
 
+  // ── Pedestrian counter ──────────────────────────────────────────────────────
+  const [pedTotal, setPedTotal] = useState(0);
+
+  useEffect(() => {
+    countSessionPedestrians(session.id).then(setPedTotal);
+  }, [session.id]);
+
+  const handlePedTap = async () => {
+    await addPedestrianCount(session.id, null);
+    setPedTotal((n) => n + 1);
+  };
+
+  const handlePedUndo = async () => {
+    const ok = await undoLastPedestrianCount(session.id);
+    if (ok) setPedTotal((n) => Math.max(0, n - 1));
+  };
+
+  // ── Vehicle counter ─────────────────────────────────────────────────────────
   useEffect(() => {
     if (paused) return;
     const interval = setInterval(() => setElapsed((e) => e + 1), 1000);
@@ -74,7 +94,7 @@ export default function CountingScreen() {
   const handleEndSession = () => {
     Alert.alert(
       'End Session?',
-      `You have counted ${total} vehicles. End this session?`,
+      `You have counted ${total} vehicles and ${pedTotal} pedestrian${pedTotal !== 1 ? 's' : ''}. End this session?`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -99,6 +119,8 @@ export default function CountingScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
+
+      {/* ── Vehicle header ──────────────────────────────────────────────────── */}
       <View style={styles.header}>
         <Text style={styles.locationName} numberOfLines={1}>{session.location_name}</Text>
         <Text style={[styles.timer, paused && styles.timerPaused]}>{formatElapsed(elapsed)}</Text>
@@ -113,6 +135,28 @@ export default function CountingScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* ── Pedestrian bar ──────────────────────────────────────────────────── */}
+      <View style={styles.pedBar}>
+        <View style={styles.pedInfo}>
+          <Text style={styles.pedIcon}>👣</Text>
+          <Text style={styles.pedCount}>{pedTotal}</Text>
+          <Text style={styles.pedLabel}>pedestrians</Text>
+        </View>
+        <View style={styles.pedActions}>
+          <TouchableOpacity
+            style={[styles.pedUndoBtn, pedTotal === 0 && styles.pedBtnDim]}
+            onPress={handlePedUndo}
+            disabled={pedTotal === 0}
+          >
+            <Text style={[styles.pedUndoText, pedTotal === 0 && styles.pedBtnDimText]}>↩</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.pedTapBtn} onPress={handlePedTap} activeOpacity={0.55}>
+            <Text style={styles.pedTapText}>+ TAP</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* ── Diagram ─────────────────────────────────────────────────────────── */}
       {isLandscape || isTablet ? (
         <View style={styles.landscapeLayout}>
           <View style={styles.landscapeMap}>{map}</View>
@@ -141,6 +185,8 @@ export default function CountingScreen() {
 function createStyles(G: ThemeTokens) {
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: G.bg },
+
+    // Vehicle header
     header: {
       flexDirection: 'row', alignItems: 'center',
       paddingHorizontal: 14, paddingVertical: 10,
@@ -167,6 +213,34 @@ function createStyles(G: ThemeTokens) {
       borderWidth: 1, borderColor: G.redRim,
     },
     endBtnText: { color: G.red, fontSize: 15 },
+
+    // Pedestrian bar
+    pedBar: {
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+      paddingHorizontal: 14, paddingVertical: 8,
+      backgroundColor: G.greenGlass,
+      borderBottomWidth: 1, borderBottomColor: G.greenRim,
+    },
+    pedInfo: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+    pedIcon:  { fontSize: 16 },
+    pedCount: { color: G.green, fontSize: 20, fontWeight: '700', minWidth: 28 },
+    pedLabel: { color: G.textMute, fontSize: 11 },
+    pedActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+    pedUndoBtn: {
+      paddingVertical: 6, paddingHorizontal: 10,
+      backgroundColor: G.glass1, borderRadius: G.radiusXs,
+      borderWidth: 1, borderColor: G.rim1,
+    },
+    pedUndoText: { color: G.textSub, fontSize: 15 },
+    pedBtnDim:     { borderColor: G.rim0, backgroundColor: G.glass0 },
+    pedBtnDimText: { color: G.textMute },
+    pedTapBtn: {
+      paddingVertical: 6, paddingHorizontal: 18,
+      backgroundColor: G.green, borderRadius: G.radiusXs,
+    },
+    pedTapText: { color: '#fff', fontWeight: '700', fontSize: 13 },
+
+    // Layouts
     phoneLayout: { flex: 1, padding: 16, gap: 12 },
     landscapeLayout: { flex: 1, flexDirection: 'row' },
     landscapeMap: { flex: 1, padding: 12 },
