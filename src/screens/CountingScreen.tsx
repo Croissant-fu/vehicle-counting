@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, Alert, useWindowDimensions,
 } from 'react-native';
@@ -9,18 +9,17 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 import { CounterEngine } from '../modules/counter/CounterEngine';
 import { endSession, getSession } from '../modules/session/SessionManager';
-import {
-  getVehicleTypes, addVehicleType, deleteVehicleType,
-} from '../modules/vehicleType/VehicleTypeManager';
+import { getVehicleTypes, addVehicleType, deleteVehicleType } from '../modules/vehicleType/VehicleTypeManager';
 import UndoBar from '../components/UndoBar';
 import IntersectionDragMap from '../components/IntersectionDragMap';
 import ManageVehicleTypesModal from '../components/ManageVehicleTypesModal';
 import { useResponsiveLayout } from '../hooks/useResponsiveLayout';
 import { Session, Movement } from '../types';
 import { RootStackParamList } from '../navigation/AppNavigator';
-import { G } from '../theme';
+import { useTheme } from '../context/ThemeContext';
+import { ThemeTokens } from '../theme';
 
-type Nav = NativeStackNavigationProp<RootStackParamList, 'Counting'>;
+type Nav   = NativeStackNavigationProp<RootStackParamList, 'Counting'>;
 type Route = RouteProp<RootStackParamList, 'Counting'>;
 
 function formatElapsed(seconds: number): string {
@@ -38,10 +37,13 @@ export default function CountingScreen() {
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
 
+  const G = useTheme();
+  const styles = useMemo(() => createStyles(G), [G]);
+
   const engineRef = useRef(new CounterEngine(session));
-  const [total, setTotal] = useState(session.total_count);
-  const [elapsed, setElapsed] = useState(0);
-  const [paused, setPaused] = useState(false);
+  const [total, setTotal]         = useState(session.total_count);
+  const [elapsed, setElapsed]     = useState(0);
+  const [paused, setPaused]       = useState(false);
   const [vehicleTypes, setVehicleTypes] = useState<string[]>(['Moto', 'Car', 'Rickshaw', 'Other']);
   const [manageVisible, setManageVisible] = useState(false);
 
@@ -60,15 +62,12 @@ export default function CountingScreen() {
 
   const handleDrag = async (from: string, movement: Movement, vehicleType: string) => {
     await engineRef.current.record({ from_direction: from, movement, vehicle_type: vehicleType });
-    const updated = await getSession(session.id);
-    setTotal(updated.total_count);
+    setTotal((await getSession(session.id)).total_count);
   };
 
   const handleUndo = async () => {
-    const undone = await engineRef.current.undo();
-    if (undone) {
-      const updated = await getSession(session.id);
-      setTotal(updated.total_count);
+    if (await engineRef.current.undo()) {
+      setTotal((await getSession(session.id)).total_count);
     }
   };
 
@@ -89,16 +88,6 @@ export default function CountingScreen() {
     );
   };
 
-  const handleAddType = async (name: string) => {
-    await addVehicleType(name);
-    await loadVehicleTypes();
-  };
-
-  const handleDeleteType = async (name: string) => {
-    await deleteVehicleType(name);
-    await loadVehicleTypes();
-  };
-
   const map = (
     <IntersectionDragMap
       legs={session.custom_legs}
@@ -110,7 +99,7 @@ export default function CountingScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <BlurView intensity={G.blurIntensity} tint="dark" style={styles.header}>
+      <BlurView intensity={G.blurIntensity} tint={G.blurTint} style={styles.header}>
         <Text style={styles.locationName} numberOfLines={1}>{session.location_name}</Text>
         <Text style={[styles.timer, paused && styles.timerPaused]}>{formatElapsed(elapsed)}</Text>
         <TouchableOpacity style={styles.pauseBtn} onPress={() => setPaused((p) => !p)}>
@@ -141,53 +130,48 @@ export default function CountingScreen() {
       <ManageVehicleTypesModal
         visible={manageVisible}
         vehicleTypes={vehicleTypes}
-        onAdd={handleAddType}
-        onDelete={handleDeleteType}
+        onAdd={async (n) => { await addVehicleType(n); await loadVehicleTypes(); }}
+        onDelete={async (n) => { await deleteVehicleType(n); await loadVehicleTypes(); }}
         onClose={() => setManageVisible(false)}
       />
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: G.bg },
-
-  header: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 14, paddingVertical: 10,
-    borderBottomWidth: 1, borderBottomColor: G.rim1,
-  },
-  locationName: { flex: 1, color: G.blue, fontWeight: '700', fontSize: 14 },
-  timer: { color: G.textSub, fontSize: 13, marginHorizontal: 8, fontVariant: ['tabular-nums'] },
-  timerPaused: { color: G.orange },
-
-  pauseBtn: {
-    padding: 7, marginRight: 6,
-    backgroundColor: G.glass2, borderRadius: G.radiusXs,
-    borderWidth: 1, borderColor: G.rim1,
-  },
-  pauseBtnText: { color: G.blue, fontSize: 15 },
-
-  manageBtn: {
-    padding: 7, marginRight: 6,
-    backgroundColor: G.glass2, borderRadius: G.radiusXs,
-    borderWidth: 1, borderColor: G.rim1,
-  },
-  manageBtnText: { color: G.textSub, fontSize: 15 },
-
-  endBtn: {
-    padding: 7,
-    backgroundColor: G.redGlass, borderRadius: G.radiusXs,
-    borderWidth: 1, borderColor: G.redRim,
-  },
-  endBtnText: { color: G.red, fontSize: 15 },
-
-  phoneLayout: { flex: 1, padding: 16, gap: 12 },
-
-  landscapeLayout: { flex: 1, flexDirection: 'row' },
-  landscapeMap: { flex: 1, padding: 12 },
-  landscapeSide: {
-    width: 160, padding: 12, justifyContent: 'flex-end',
-    borderLeftWidth: 1, borderLeftColor: G.rim1,
-  },
-});
+function createStyles(G: ThemeTokens) {
+  return StyleSheet.create({
+    container: { flex: 1, backgroundColor: G.bg },
+    header: {
+      flexDirection: 'row', alignItems: 'center',
+      paddingHorizontal: 14, paddingVertical: 10,
+      borderBottomWidth: 1, borderBottomColor: G.rim1,
+    },
+    locationName: { flex: 1, color: G.blue, fontWeight: '700', fontSize: 14 },
+    timer: { color: G.textSub, fontSize: 13, marginHorizontal: 8, fontVariant: ['tabular-nums'] },
+    timerPaused: { color: G.orange },
+    pauseBtn: {
+      padding: 7, marginRight: 6,
+      backgroundColor: G.glass2, borderRadius: G.radiusXs,
+      borderWidth: 1, borderColor: G.rim1,
+    },
+    pauseBtnText: { color: G.blue, fontSize: 15 },
+    manageBtn: {
+      padding: 7, marginRight: 6,
+      backgroundColor: G.glass2, borderRadius: G.radiusXs,
+      borderWidth: 1, borderColor: G.rim1,
+    },
+    manageBtnText: { color: G.textSub, fontSize: 15 },
+    endBtn: {
+      padding: 7, backgroundColor: G.redGlass, borderRadius: G.radiusXs,
+      borderWidth: 1, borderColor: G.redRim,
+    },
+    endBtnText: { color: G.red, fontSize: 15 },
+    phoneLayout: { flex: 1, padding: 16, gap: 12 },
+    landscapeLayout: { flex: 1, flexDirection: 'row' },
+    landscapeMap: { flex: 1, padding: 12 },
+    landscapeSide: {
+      width: 160, padding: 12, justifyContent: 'flex-end',
+      borderLeftWidth: 1, borderLeftColor: G.rim1,
+    },
+  });
+}

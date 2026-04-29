@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Alert,
 } from 'react-native';
@@ -7,12 +7,11 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { createSession } from '../modules/session/SessionManager';
 import { requestAndGetLocation } from '../modules/location/LocationService';
-import {
-  getVehicleTypes, addVehicleType, deleteVehicleType,
-} from '../modules/vehicleType/VehicleTypeManager';
+import { getVehicleTypes, addVehicleType, deleteVehicleType } from '../modules/vehicleType/VehicleTypeManager';
 import { IntersectionType, TimePeriod } from '../types';
 import { RootStackParamList } from '../navigation/AppNavigator';
-import { G } from '../theme';
+import { useTheme } from '../context/ThemeContext';
+import { ThemeTokens } from '../theme';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'SessionSetup'>;
 
@@ -31,6 +30,9 @@ const TIME_PERIODS: { key: TimePeriod; label: string }[] = [
 
 export default function SessionSetupScreen() {
   const navigation = useNavigation<Nav>();
+  const G = useTheme();
+  const styles = useMemo(() => createStyles(G), [G]);
+
   const [locationName, setLocationName] = useState('');
   const [intersectionType, setIntersectionType] = useState<IntersectionType>('4way');
   const [timePeriod, setTimePeriod] = useState<TimePeriod>('am_peak');
@@ -80,7 +82,6 @@ export default function SessionSetupScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.content}>
-
         <Text style={styles.label}>LOCATION NAME</Text>
         <TextInput
           style={styles.input}
@@ -193,82 +194,70 @@ export default function SessionSetupScreen() {
             Start Counting →
           </Text>
         </TouchableOpacity>
-
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: G.bg },
-  content: { padding: 20, gap: 8 },
-
-  label: {
-    color: G.textMute, fontSize: 11, fontWeight: '700',
-    letterSpacing: 1.2, marginTop: 18, marginBottom: 6,
-  },
-
-  input: {
-    backgroundColor: G.glass1, color: G.text,
-    padding: 14, borderRadius: G.radiusSm,
-    fontSize: 14, borderWidth: 1, borderColor: G.rim1, marginBottom: 4,
-  },
-
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  chip: {
-    paddingVertical: 9, paddingHorizontal: 16,
-    backgroundColor: G.glass1, borderRadius: 50,
-    borderWidth: 1, borderColor: G.rim1,
-  },
-  chipSelected: { backgroundColor: G.blueGlass, borderColor: G.blueRim },
-  chipText: { color: G.textSub, fontSize: 13 },
-  chipTextSelected: { color: G.blue, fontWeight: '600' },
-
-  vtList: {
-    backgroundColor: G.glass1, borderRadius: G.radiusSm,
-    borderWidth: 1, borderColor: G.rim1, overflow: 'hidden',
-  },
-  vtRow: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 14, paddingVertical: 12,
-  },
-  vtRowBorder: { borderBottomWidth: 1, borderBottomColor: G.rim0 },
-  vtName: { flex: 1, color: G.text, fontSize: 14 },
-  vtDeleteBtn: {
-    width: 28, height: 28, borderRadius: 14,
-    backgroundColor: G.redGlass, justifyContent: 'center', alignItems: 'center',
-    borderWidth: 1, borderColor: G.redRim,
-  },
-  vtDeleteBtnDisabled: { backgroundColor: G.glass0, borderColor: G.rim0 },
-  vtDeleteBtnText: { color: G.red, fontSize: 18, lineHeight: 20 },
-
-  vtAddRow: { flexDirection: 'row', gap: 8, marginTop: 6 },
-  vtInput: {
-    flex: 1, backgroundColor: G.glass1, color: G.text,
-    paddingHorizontal: 14, paddingVertical: 11,
-    borderRadius: G.radiusSm, fontSize: 14,
-    borderWidth: 1, borderColor: G.rim1,
-  },
-  vtAddBtn: {
-    paddingHorizontal: 18, paddingVertical: 11,
-    backgroundColor: G.blueGlass, borderRadius: G.radiusSm,
-    borderWidth: 1, borderColor: G.blueRim, justifyContent: 'center',
-  },
-  vtAddBtnDisabled: { backgroundColor: G.glass0, borderColor: G.rim0 },
-  vtAddBtnText: { color: G.blue, fontWeight: '700', fontSize: 14 },
-
-  gpsBox: {
-    backgroundColor: G.glass1, borderRadius: G.radiusSm,
-    borderWidth: 1, borderColor: G.rim1, padding: 12,
-  },
-  gpsText: { color: G.blue, fontSize: 13 },
-
-  startBtn: {
-    marginTop: 36, padding: 18,
-    backgroundColor: G.blueGlass, borderRadius: G.radius,
-    borderWidth: 1, borderColor: G.blueRim, alignItems: 'center',
-  },
-  startBtnDisabled: { backgroundColor: G.glass0, borderColor: G.rim0 },
-  startBtnText: { color: G.blue, fontWeight: '700', fontSize: 16 },
-  startBtnTextDisabled: { color: G.textMute },
-});
+function createStyles(G: ThemeTokens) {
+  return StyleSheet.create({
+    container: { flex: 1, backgroundColor: G.bg },
+    content: { padding: 20, gap: 8 },
+    label: { color: G.textMute, fontSize: 11, fontWeight: '700', letterSpacing: 1.2, marginTop: 18, marginBottom: 6 },
+    input: {
+      backgroundColor: G.glass1, color: G.text,
+      padding: 14, borderRadius: G.radiusSm,
+      fontSize: 14, borderWidth: 1, borderColor: G.rim1, marginBottom: 4,
+    },
+    chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+    chip: {
+      paddingVertical: 9, paddingHorizontal: 16,
+      backgroundColor: G.glass1, borderRadius: 50,
+      borderWidth: 1, borderColor: G.rim1,
+    },
+    chipSelected: { backgroundColor: G.blueGlass, borderColor: G.blueRim },
+    chipText: { color: G.textSub, fontSize: 13 },
+    chipTextSelected: { color: G.blue, fontWeight: '600' },
+    vtList: {
+      backgroundColor: G.glass1, borderRadius: G.radiusSm,
+      borderWidth: 1, borderColor: G.rim1, overflow: 'hidden',
+    },
+    vtRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 12 },
+    vtRowBorder: { borderBottomWidth: 1, borderBottomColor: G.rim0 },
+    vtName: { flex: 1, color: G.text, fontSize: 14 },
+    vtDeleteBtn: {
+      width: 28, height: 28, borderRadius: 14,
+      backgroundColor: G.redGlass, justifyContent: 'center', alignItems: 'center',
+      borderWidth: 1, borderColor: G.redRim,
+    },
+    vtDeleteBtnDisabled: { backgroundColor: G.glass0, borderColor: G.rim0 },
+    vtDeleteBtnText: { color: G.red, fontSize: 18, lineHeight: 20 },
+    vtAddRow: { flexDirection: 'row', gap: 8, marginTop: 6 },
+    vtInput: {
+      flex: 1, backgroundColor: G.glass1, color: G.text,
+      paddingHorizontal: 14, paddingVertical: 11,
+      borderRadius: G.radiusSm, fontSize: 14,
+      borderWidth: 1, borderColor: G.rim1,
+    },
+    vtAddBtn: {
+      paddingHorizontal: 18, paddingVertical: 11,
+      backgroundColor: G.blueGlass, borderRadius: G.radiusSm,
+      borderWidth: 1, borderColor: G.blueRim, justifyContent: 'center',
+    },
+    vtAddBtnDisabled: { backgroundColor: G.glass0, borderColor: G.rim0 },
+    vtAddBtnText: { color: G.blue, fontWeight: '700', fontSize: 14 },
+    gpsBox: {
+      backgroundColor: G.glass1, borderRadius: G.radiusSm,
+      borderWidth: 1, borderColor: G.rim1, padding: 12,
+    },
+    gpsText: { color: G.blue, fontSize: 13 },
+    startBtn: {
+      marginTop: 36, padding: 18,
+      backgroundColor: G.blueGlass, borderRadius: G.radius,
+      borderWidth: 1, borderColor: G.blueRim, alignItems: 'center',
+    },
+    startBtnDisabled: { backgroundColor: G.glass0, borderColor: G.rim0 },
+    startBtnText: { color: G.blue, fontWeight: '700', fontSize: 16 },
+    startBtnTextDisabled: { color: G.textMute },
+  });
+}
