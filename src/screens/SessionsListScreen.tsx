@@ -12,7 +12,7 @@ import {
 } from '../modules/session/SessionManager';
 import { Session } from '../types';
 import { RootStackParamList } from '../navigation/AppNavigator';
-import { useTheme, useThemeMode } from '../context/ThemeContext';
+import { useTheme } from '../context/ThemeContext';
 import { ThemeTokens } from '../theme';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'SessionsList'>;
@@ -35,7 +35,6 @@ const COLOR_TAGS: { label: string; color: string | null }[] = [
 export default function SessionsListScreen() {
   const navigation = useNavigation<Nav>();
   const G = useTheme();
-  const { mode, toggle: toggleTheme } = useThemeMode();
   const styles = useMemo(() => createStyles(G), [G]);
 
   const [sessions, setSessions] = useState<Session[]>([]);
@@ -59,15 +58,6 @@ export default function SessionsListScreen() {
   // ── Header buttons ─────────────────────────────────────────────────────────
   useEffect(() => {
     navigation.setOptions({
-      headerLeft: () => (
-        <TouchableOpacity
-          onPress={toggleTheme}
-          hitSlop={{ top: 8, bottom: 8, left: 12, right: 12 }}
-          style={{ marginRight: 4 }}
-        >
-          <Text style={{ fontSize: 20 }}>{mode === 'dark' ? '☀️' : '🌙'}</Text>
-        </TouchableOpacity>
-      ),
       headerRight: () => (
         <TouchableOpacity
           onPress={() => {
@@ -82,7 +72,7 @@ export default function SessionsListScreen() {
         </TouchableOpacity>
       ),
     });
-  }, [navigation, selectionMode, mode, toggleTheme, G.blue]);
+  }, [navigation, selectionMode, G.blue]);
 
   // ── Row interactions ───────────────────────────────────────────────────────
   const handlePress = (item: Session) => {
