@@ -1,11 +1,12 @@
 import { getDatabase } from '../../db/database';
 import { Session, CreateSessionInput } from '../../types';
+import { localTimestamp } from '../../utils/time';
 
 function generateSessionId(): string {
   const now = new Date();
-  const date = now.toISOString().replace(/[-:T.Z]/g, '').slice(0, 15);
-  const ms = now.getMilliseconds().toString().padStart(3, '0');
-  return `sess_${date}_${ms}`;
+  const ts  = localTimestamp().replace(/[-: ]/g, '').slice(0, 14);
+  const ms  = now.getMilliseconds().toString().padStart(3, '0');
+  return `sess_${ts}_${ms}`;
 }
 
 function deserializeSession(row: Record<string, unknown>): Session {
@@ -44,7 +45,7 @@ export async function createSession(input: CreateSessionInput): Promise<Session>
     lat: input.lat,
     lng: input.lng,
     custom_legs: input.custom_legs ?? null,
-    started_at: new Date().toISOString(),
+    started_at: localTimestamp(),
     ended_at: null,
     total_count: 0,
     color_tag: null,
@@ -65,7 +66,7 @@ export async function createSession(input: CreateSessionInput): Promise<Session>
 
 export async function endSession(sessionId: string): Promise<Session> {
   const db = await getDatabase();
-  const ended_at = new Date().toISOString();
+  const ended_at = localTimestamp();
   const result = await db.runAsync(
     `UPDATE sessions SET ended_at = ? WHERE id = ?`,
     [ended_at, sessionId]

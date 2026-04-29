@@ -1,12 +1,13 @@
 import { getDatabase } from '../../db/database';
 import { PedestrianCount, CrossingDirection } from '../../types';
+import { localTimestamp } from '../../utils/time';
 
 export async function addPedestrianCount(
   sessionId: string,
   crossingDirection: CrossingDirection | null,
 ): Promise<PedestrianCount> {
   const db = await getDatabase();
-  const timestamp = new Date().toISOString();
+  const timestamp = localTimestamp();
   const result = await db.runAsync(
     `INSERT INTO pedestrian_counts (session_id, crossing_direction, timestamp)
      VALUES (?, ?, ?)`,
