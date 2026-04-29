@@ -8,7 +8,11 @@
       "PowerShell(cmd /c \"where npm 2>nul\")",
       "Bash(git -C \"d:/vehicle-counting\" checkout -b feature/custom-vehicle-types-export-downloads)",
       "Bash(git -C d:/vehicle-counting commit -m ' *)",
-      "Bash(git -C \"d:/vehicle-counting\" push -u origin feature/custom-vehicle-types-export-downloads)"
+      "Bash(git -C \"d:/vehicle-counting\" push -u origin feature/custom-vehicle-types-export-downloads)",
+      "Bash(git -C \"d:/vehicle-counting\" remote -v)",
+      "Bash(npx expo *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)"
     ]
   }
 }
