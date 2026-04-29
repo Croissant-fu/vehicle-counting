@@ -75,5 +75,5 @@ export const lightTheme: ThemeTokens = {
   textMute: 'rgba(0,0,0,0.32)',
   radius: 20, radiusSm: 14, radiusXs: 10,
   blurIntensity: 48,
-  blurTint: 'light',
+  blurTint: 'default',
 };

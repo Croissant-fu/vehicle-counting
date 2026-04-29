@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import {
   View, Text, TouchableOpacity, StyleSheet, Alert, useWindowDimensions,
 } from 'react-native';
-import { BlurView } from 'expo-blur';
+
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -99,7 +99,7 @@ export default function CountingScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <BlurView intensity={G.blurIntensity} tint={G.blurTint} style={styles.header}>
+      <View style={styles.header}>
         <Text style={styles.locationName} numberOfLines={1}>{session.location_name}</Text>
         <Text style={[styles.timer, paused && styles.timerPaused]}>{formatElapsed(elapsed)}</Text>
         <TouchableOpacity style={styles.pauseBtn} onPress={() => setPaused((p) => !p)}>
@@ -111,7 +111,7 @@ export default function CountingScreen() {
         <TouchableOpacity testID="end-session-btn" style={styles.endBtn} onPress={handleEndSession}>
           <Text style={styles.endBtnText}>■</Text>
         </TouchableOpacity>
-      </BlurView>
+      </View>
 
       {isLandscape || isTablet ? (
         <View style={styles.landscapeLayout}>
@@ -145,6 +145,7 @@ function createStyles(G: ThemeTokens) {
       flexDirection: 'row', alignItems: 'center',
       paddingHorizontal: 14, paddingVertical: 10,
       borderBottomWidth: 1, borderBottomColor: G.rim1,
+      backgroundColor: G.glass2,
     },
     locationName: { flex: 1, color: G.blue, fontWeight: '700', fontSize: 14 },
     timer: { color: G.textSub, fontSize: 13, marginHorizontal: 8, fontVariant: ['tabular-nums'] },
