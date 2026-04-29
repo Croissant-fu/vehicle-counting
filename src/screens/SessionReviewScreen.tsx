@@ -7,8 +7,9 @@ import { useRoute, useNavigation } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { getSession } from '../modules/session/SessionManager';
-import { getSessionCounts, exportSession, exportPdf, ReportStats } from '../modules/export/ExportEngine';
-import { Session, Count } from '../types';
+import { getSessionCounts, exportSession, exportPdf, exportPedestrianCsv, ReportStats } from '../modules/export/ExportEngine';
+import { getSessionPedestrianCounts } from '../modules/pedestrian/PedestrianManager';
+import { Session, Count, PedestrianCount } from '../types';
 import { RootStackParamList } from '../navigation/AppNavigator';
 import { useTheme } from '../context/ThemeContext';
 import { ThemeTokens } from '../theme';
@@ -80,13 +81,17 @@ export default function SessionReviewScreen() {
   const G = useTheme();
   const styles = useMemo(() => createStyles(G), [G]);
 
-  const [session,   setSession]   = useState<Session | null>(null);
-  const [counts,    setCounts]    = useState<Count[]>([]);
-  const [exporting, setExporting] = useState<string | null>(null);
+  const [session,    setSession]    = useState<Session | null>(null);
+  const [counts,     setCounts]     = useState<Count[]>([]);
+  const [pedCounts,  setPedCounts]  = useState<PedestrianCount[]>([]);
+  const [exporting,  setExporting]  = useState<string | null>(null);
 
   useEffect(() => {
-    Promise.all([getSession(params.sessionId), getSessionCounts(params.sessionId)])
-      .then(([s, c]) => { setSession(s); setCounts(c); });
+    Promise.all([
+      getSession(params.sessionId),
+      getSessionCounts(params.sessionId),
+      getSessionPedestrianCounts(params.sessionId),
+    ]).then(([s, c, p]) => { setSession(s); setCounts(c); setPedCounts(p); });
   }, [params.sessionId]);
 
   useEffect(() => {
@@ -104,13 +109,17 @@ export default function SessionReviewScreen() {
   const stats = computeStats(session, counts);
   const { byVehicle, byMovement, byApproach, duration } = stats;
 
-  const doExport = async (format: 'csv' | 'xlsx' | 'json' | 'pdf') => {
+  const doExport = async (format: 'csv' | 'xlsx' | 'json' | 'pdf' | 'ped_csv') => {
     if (exporting) return;
     setExporting(format);
     try {
-      format === 'pdf'
-        ? await exportPdf(session, stats)
-        : await exportSession(session, counts, format);
+      if (format === 'pdf') {
+        await exportPdf(session, stats);
+      } else if (format === 'ped_csv') {
+        await exportPedestrianCsv(session, pedCounts);
+      } else {
+        await exportSession(session, counts, format, pedCounts.length > 0 ? pedCounts : undefined);
+      }
     } finally { setExporting(null); }
   };
 
@@ -142,6 +151,42 @@ export default function SessionReviewScreen() {
         <BarChart title="BY MOVEMENT"     data={byMovement} color={G.purple} styles={styles} />
         <BarChart title="BY APPROACH"     data={byApproach} color={G.green}  styles={styles} />
 
+        {/* ── Pedestrian summary (shown only if data exists) ───────────────── */}
+        {pedCounts.length > 0 && (() => {
+          const pedNS  = pedCounts.filter((p) => p.crossing_direction === 'NS').length;
+          const pedEW  = pedCounts.filter((p) => p.crossing_direction === 'EW').length;
+          const pedAny = pedCounts.filter((p) => !p.crossing_direction).length;
+          return (
+            <View style={styles.pedCard}>
+              <Text style={styles.sectionLabel}>👣 PEDESTRIAN COUNTS</Text>
+              <View style={styles.summaryGrid}>
+                <View style={styles.statCell}>
+                  <Text style={[styles.statValue, { color: G.green }]}>{pedCounts.length}</Text>
+                  <Text style={styles.statLabel}>Total Crossings</Text>
+                </View>
+                {pedNS > 0 && (
+                  <View style={styles.statCell}>
+                    <Text style={[styles.statValue, { color: G.green }]}>{pedNS}</Text>
+                    <Text style={styles.statLabel}>N ↕ S</Text>
+                  </View>
+                )}
+                {pedEW > 0 && (
+                  <View style={styles.statCell}>
+                    <Text style={[styles.statValue, { color: G.green }]}>{pedEW}</Text>
+                    <Text style={styles.statLabel}>E ↔ W</Text>
+                  </View>
+                )}
+                {pedAny > 0 && (
+                  <View style={styles.statCell}>
+                    <Text style={[styles.statValue, { color: G.green }]}>{pedAny}</Text>
+                    <Text style={styles.statLabel}>Unspecified</Text>
+                  </View>
+                )}
+              </View>
+            </View>
+          );
+        })()}
+
         <Text style={styles.sectionLabel}>EXPORT DATA</Text>
         <View style={styles.exportRow}>
           {(['csv', 'xlsx', 'json'] as const).map((fmt) => (
@@ -172,6 +217,22 @@ export default function SessionReviewScreen() {
                 <Text style={styles.pdfBtnSub}>Charts + summary as a shareable PDF</Text>
               </>}
         </TouchableOpacity>
+
+        {pedCounts.length > 0 && (
+          <TouchableOpacity
+            testID="export-ped-csv-btn"
+            style={styles.pedCsvBtn}
+            onPress={() => doExport('ped_csv')}
+            disabled={!!exporting}
+          >
+            {exporting === 'ped_csv'
+              ? <ActivityIndicator color={G.green} size="small" />
+              : <>
+                  <Text style={styles.pedCsvBtnText}>↓  Export Pedestrian CSV</Text>
+                  <Text style={styles.pedCsvBtnSub}>Separate file for pedestrian counts</Text>
+                </>}
+          </TouchableOpacity>
+        )}
 
         <TouchableOpacity style={styles.homeBtn} onPress={() => navigation.popToTop()}>
           <Text style={styles.homeBtnText}>⌂  Go to Home</Text>
@@ -231,6 +292,18 @@ function createStyles(G: ThemeTokens) {
     },
     pdfBtnText: { color: G.blue, fontWeight: '700', fontSize: 15 },
     pdfBtnSub:  { color: G.textMute, fontSize: 12 },
+    pedCard: {
+      backgroundColor: G.glass1, borderRadius: G.radius,
+      borderWidth: 1, borderColor: G.greenRim, padding: 16, gap: 10,
+    },
+    pedCsvBtn: {
+      padding: 16, alignItems: 'center',
+      backgroundColor: G.greenGlass, borderRadius: G.radius,
+      borderWidth: 1, borderColor: G.greenRim,
+      minHeight: 62, justifyContent: 'center', gap: 3,
+    },
+    pedCsvBtnText: { color: G.green, fontWeight: '700', fontSize: 15 },
+    pedCsvBtnSub:  { color: G.textMute, fontSize: 12 },
     homeBtn: {
       marginTop: 8, padding: 16, alignItems: 'center',
       backgroundColor: G.glass1, borderRadius: G.radius,

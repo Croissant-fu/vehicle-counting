@@ -4,7 +4,7 @@ import * as Sharing from 'expo-sharing';
 import * as Print from 'expo-print';
 import { utils, write } from 'xlsx';
 import { getDatabase } from '../../db/database';
-import { Session, Count } from '../../types';
+import { Session, Count, PedestrianCount } from '../../types';
 
 type ExportFormat = 'csv' | 'xlsx' | 'json';
 
@@ -112,7 +112,11 @@ function buildCsv(session: Session, counts: Count[]): string {
   return [header, ...rows].join('\n');
 }
 
-function buildXlsx(session: Session, counts: Count[]): string {
+function buildXlsx(
+  session: Session,
+  counts: Count[],
+  pedestrianCounts?: PedestrianCount[],
+): string {
   const rawRows = counts.map((c) => ({
     session_id: session.id, location_name: session.location_name,
     intersection_type: session.intersection_type, time_period: session.time_period,
@@ -129,8 +133,21 @@ function buildXlsx(session: Session, counts: Count[]): string {
   const summaryRows = Object.entries(summaryData).map(([movement, count]) => ({ movement, count }));
 
   const wb = utils.book_new();
-  utils.book_append_sheet(wb, utils.json_to_sheet(summaryRows), 'Summary');
-  utils.book_append_sheet(wb, utils.json_to_sheet(rawRows), 'Raw');
+  utils.book_append_sheet(wb, utils.json_to_sheet(summaryRows), 'Vehicle Summary');
+  utils.book_append_sheet(wb, utils.json_to_sheet(rawRows), 'Vehicle Raw');
+
+  if (pedestrianCounts && pedestrianCounts.length > 0) {
+    const pedRows = pedestrianCounts.map((p) => ({
+      session_id: session.id,
+      location_name: session.location_name,
+      time_period: session.time_period,
+      pedestrian_count: 1,
+      crossing_direction: p.crossing_direction ?? '',
+      timestamp: p.timestamp,
+    }));
+    utils.book_append_sheet(wb, utils.json_to_sheet(pedRows), 'Pedestrian Counts');
+  }
+
   return write(wb, { type: 'base64', bookType: 'xlsx' });
 }
 
@@ -138,6 +155,7 @@ export async function exportSession(
   session: Session,
   counts: Count[],
   format: ExportFormat,
+  pedestrianCounts?: PedestrianCount[],
 ): Promise<void> {
   const filename = buildFilename(session, format);
   const path = `${FileSystem.documentDirectory}${filename}`;
@@ -152,7 +170,7 @@ export async function exportSession(
     content = JSON.stringify({ session, counts }, null, 2);
     encoding = FileSystem.EncodingType.UTF8;
   } else {
-    content = buildXlsx(session, counts);
+    content = buildXlsx(session, counts, pedestrianCounts);
     encoding = FileSystem.EncodingType.Base64;
   }
 
@@ -294,6 +312,35 @@ export async function exportPdf(session: Session, stats: ReportStats): Promise<v
   }
 
   await Sharing.shareAsync(dest, { mimeType: 'application/pdf', UTI: 'com.adobe.pdf' });
+  if (savedToDownloads) Alert.alert('Saved to Downloads', `"${filename}" was saved to your Downloads folder.`);
+}
+
+// ── Pedestrian CSV export ─────────────────────────────────────────────────────
+
+export async function exportPedestrianCsv(
+  session: Session,
+  pedestrianCounts: PedestrianCount[],
+): Promise<void> {
+  const dateStr  = session.started_at.slice(0, 10).replace(/-/g, '');
+  const timeStr  = session.started_at.slice(11, 16).replace(':', '');
+  const loc      = slugify(session.location_name);
+  const filename = `fucount_ped_${loc}_${dateStr}_${timeStr}.csv`;
+  const path     = `${FileSystem.documentDirectory}${filename}`;
+
+  const header = 'session_id,location_name,time_period,pedestrian_count,crossing_direction,timestamp';
+  const rows   = pedestrianCounts.map((p) =>
+    [session.id, session.location_name, session.time_period, 1, p.crossing_direction ?? '', p.timestamp].join(',')
+  );
+  const content = [header, ...rows].join('\n');
+
+  await FileSystem.writeAsStringAsync(path, content, { encoding: FileSystem.EncodingType.UTF8 });
+
+  let savedToDownloads = false;
+  if (Platform.OS === 'android') {
+    savedToDownloads = await saveToDownloads(content, filename, 'csv', FileSystem.EncodingType.UTF8);
+  }
+
+  await Sharing.shareAsync(path, { mimeType: 'text/csv', UTI: 'public.comma-separated-values-text' });
   if (savedToDownloads) Alert.alert('Saved to Downloads', `"${filename}" was saved to your Downloads folder.`);
 }
 

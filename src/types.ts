@@ -1,4 +1,5 @@
 export type IntersectionType = '4way' | 'tee' | 'midblock' | 'roundabout' | 'custom';
+export type CrossingDirection = 'NS' | 'EW';
 export type TimePeriod = 'am_peak' | 'pm_peak' | 'off_peak';
 export type VehicleType = string; // user-defined; defaults: Moto, Car, Rickshaw, Other
 export type Movement = 'left' | 'straight' | 'right';
@@ -34,6 +35,13 @@ export interface CreateSessionInput {
   lat: number | null;
   lng: number | null;
   custom_legs?: string[];
+}
+
+export interface PedestrianCount {
+  id: number;
+  session_id: string;
+  crossing_direction: CrossingDirection | null;
+  timestamp: string;
 }
 
 export interface RecordCountInput {

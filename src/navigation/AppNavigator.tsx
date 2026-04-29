@@ -5,6 +5,7 @@ import SessionsListScreen from '../screens/SessionsListScreen';
 import SessionSetupScreen from '../screens/SessionSetupScreen';
 import CountingScreen from '../screens/CountingScreen';
 import SessionReviewScreen from '../screens/SessionReviewScreen';
+import PedestrianCountingScreen from '../screens/PedestrianCountingScreen';
 import { Session } from '../types';
 import { useTheme } from '../context/ThemeContext';
 
@@ -13,6 +14,7 @@ export type RootStackParamList = {
   SessionSetup: undefined;
   Counting: { session: Session };
   SessionReview: { sessionId: string };
+  PedestrianCounting: { session: Session };
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -35,6 +37,7 @@ export default function AppNavigator() {
         <Stack.Screen name="SessionSetup" component={SessionSetupScreen} options={{ title: 'New Session' }} />
         <Stack.Screen name="Counting"     component={CountingScreen}     options={{ headerShown: false }} />
         <Stack.Screen name="SessionReview" component={SessionReviewScreen} options={{ title: 'Review' }} />
+        <Stack.Screen name="PedestrianCounting" component={PedestrianCountingScreen} options={{ headerShown: false }} />
       </Stack.Navigator>
     </NavigationContainer>
   );

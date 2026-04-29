@@ -59,7 +59,16 @@ async function _initSchema(db: SQLite.SQLiteDatabase): Promise<void> {
   // Migration: add color_tag column to existing installs
   try {
     await db.execAsync(`ALTER TABLE sessions ADD COLUMN color_tag TEXT;`);
-  } catch {
-    // column already exists — safe to ignore
-  }
+  } catch { /* already exists */ }
+
+  // Pedestrian counts table (new installs get it via CREATE IF NOT EXISTS above;
+  // existing installs need this separate statement)
+  await db.execAsync(`
+    CREATE TABLE IF NOT EXISTS pedestrian_counts (
+      id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id         TEXT NOT NULL REFERENCES sessions(id),
+      crossing_direction TEXT,
+      timestamp          TEXT NOT NULL
+    );
+  `);
 }

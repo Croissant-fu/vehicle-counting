@@ -111,6 +111,12 @@ export default function SessionsListScreen() {
     setColorBulk(true); setColorVisible(true);
   };
 
+  const openPedestrianFromAction = () => {
+    closeAction();
+    if (!actionSession) return;
+    navigation.navigate('PedestrianCounting', { session: actionSession });
+  };
+
   const selectFromAction = () => {
     closeAction();
     if (!actionSession) return;
@@ -233,9 +239,10 @@ export default function SessionsListScreen() {
             <View style={styles.handle} />
             <Text style={styles.sheetTitle} numberOfLines={1}>{actionSession?.location_name}</Text>
             {[
-              { icon: '✎', label: 'Rename',    onPress: openRename },
-              { icon: '⬤', label: 'Color Tag', onPress: openColorFromAction },
-              { icon: '☑', label: 'Select',    onPress: selectFromAction },
+              { icon: '✎',  label: 'Rename',            onPress: openRename },
+              { icon: '👣', label: 'Pedestrian Count',  onPress: openPedestrianFromAction },
+              { icon: '⬤',  label: 'Color Tag',         onPress: openColorFromAction },
+              { icon: '☑',  label: 'Select',            onPress: selectFromAction },
             ].map(({ icon, label, onPress }, i, arr) => (
               <TouchableOpacity key={label} style={[styles.actionItem, i < arr.length - 1 && styles.actionItemBorder]} onPress={onPress}>
                 <Text style={styles.actionIcon}>{icon}</Text>
