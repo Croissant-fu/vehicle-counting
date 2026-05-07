@@ -1,4 +1,4 @@
-// Liquid Glass — grey dark theme
+// Liquid Glass — black & yellow theme
 // Single theme. Components consume via useTheme() from ThemeContext.
 
 export type ThemeTokens = {
@@ -16,23 +16,24 @@ export type ThemeTokens = {
   blurTint: 'dark' | 'light' | 'default';
 };
 
-// Charcoal grey base — Apple system dark greys with Liquid Glass surfaces
+// Black base with yellow primary accent
 export const G: ThemeTokens = {
-  bg:      '#1c1c1e',   // Apple systemBackground dark
-  bgDeep:  '#2c2c2e',   // Apple secondarySystemBackground dark
+  bg:      '#0D0D0D',   // near-black, not pure black
+  bgDeep:  '#1A1A1A',   // slightly lighter for layering
 
-  glass0:  'rgba(255,255,255,0.05)',
-  glass1:  'rgba(255,255,255,0.09)',
-  glass2:  'rgba(255,255,255,0.13)',
-  glass3:  'rgba(255,255,255,0.20)',
+  glass0:  'rgba(255,255,255,0.04)',
+  glass1:  'rgba(255,255,255,0.08)',
+  glass2:  'rgba(255,255,255,0.12)',
+  glass3:  'rgba(255,255,255,0.18)',
 
-  rim0:    'rgba(255,255,255,0.07)',
-  rim1:    'rgba(255,255,255,0.14)',
-  rim2:    'rgba(255,255,255,0.24)',
+  rim0:    'rgba(255,255,255,0.06)',
+  rim1:    'rgba(255,255,255,0.13)',
+  rim2:    'rgba(255,255,255,0.22)',
 
-  blue:         '#0a84ff',
-  blueGlass:    'rgba(10,132,255,0.20)',
-  blueRim:      'rgba(10,132,255,0.55)',
+  // Yellow as primary accent (replacing blue)
+  blue:         '#FFD60A',
+  blueGlass:    'rgba(255,214,10,0.20)',
+  blueRim:      'rgba(255,214,10,0.55)',
 
   red:          '#ff453a',
   redGlass:     'rgba(255,69,58,0.20)',
@@ -48,9 +49,9 @@ export const G: ThemeTokens = {
 
   purple:       '#bf5af2',
 
-  text:     'rgba(255,255,255,0.92)',
-  textSub:  'rgba(255,255,255,0.52)',
-  textMute: 'rgba(255,255,255,0.30)',
+  text:     'rgba(255,255,255,0.94)',
+  textSub:  'rgba(255,255,255,0.58)',
+  textMute: 'rgba(255,255,255,0.32)',
 
   radius: 20, radiusSm: 14, radiusXs: 10,
   blurIntensity: 60,

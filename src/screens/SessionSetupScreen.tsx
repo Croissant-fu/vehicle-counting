@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Alert,
+  View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Alert, Switch,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -8,6 +8,12 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { createSession } from '../modules/session/SessionManager';
 import { requestAndGetLocation } from '../modules/location/LocationService';
 import { getVehicleTypes, addVehicleType, deleteVehicleType } from '../modules/vehicleType/VehicleTypeManager';
+import {
+  GestureConfig, DEFAULT_GESTURE_CONFIG, getGestureConfig, saveGestureConfig,
+} from '../modules/gesture/GestureConfig';
+import {
+  loadHapticSetting, setHapticsEnabled, isHapticsEnabled,
+} from '../modules/haptics/HapticService';
 import { IntersectionType, TimePeriod } from '../types';
 import { RootStackParamList } from '../navigation/AppNavigator';
 import { useTheme } from '../context/ThemeContext';
@@ -28,6 +34,12 @@ const TIME_PERIODS: { key: TimePeriod; label: string }[] = [
   { key: 'off_peak', label: 'Off-Peak' },
 ];
 
+const SLOT_LABELS: Record<'slot1' | 'slot2' | 'slot3', string> = {
+  slot1: '1 FINGER',
+  slot2: '2 FINGERS',
+  slot3: '3 FINGERS',
+};
+
 export default function SessionSetupScreen() {
   const navigation = useNavigation<Nav>();
   const G = useTheme();
@@ -40,10 +52,14 @@ export default function SessionSetupScreen() {
   const [customLegs, setCustomLegs] = useState<string[]>(['', '', '']);
   const [vehicleTypes, setVehicleTypes] = useState<string[]>([]);
   const [draftType, setDraftType] = useState('');
+  const [gestureConfig,   setGestureConfig]   = useState<GestureConfig>(DEFAULT_GESTURE_CONFIG);
+  const [hapticsEnabled,  setHapticsEnabledUI] = useState(true);
 
   useEffect(() => {
     requestAndGetLocation().then(setCoords);
     getVehicleTypes().then((types) => { if (types.length > 0) setVehicleTypes(types); });
+    getGestureConfig().then(setGestureConfig);
+    loadHapticSetting().then(() => setHapticsEnabledUI(isHapticsEnabled()));
   }, []);
 
   const isCustom = intersectionType === 'roundabout' || intersectionType === 'custom';
@@ -65,6 +81,27 @@ export default function SessionSetupScreen() {
     }
     await deleteVehicleType(name);
     setVehicleTypes(await getVehicleTypes());
+  };
+
+  const updateGestureConfig = (config: GestureConfig) => {
+    setGestureConfig(config);
+    saveGestureConfig(config);
+  };
+
+  const handleSlotToggle = (slotKey: 'slot1' | 'slot2' | 'slot3', vt: string) => {
+    const slot = gestureConfig[slotKey];
+    let newTypes: string[];
+    if (gestureConfig.enhancedEnabled) {
+      if (slot.vehicleTypes.includes(vt)) {
+        newTypes = slot.vehicleTypes.filter((t) => t !== vt);
+        if (newTypes.length === 0) return; // must keep at least one
+      } else {
+        newTypes = [...slot.vehicleTypes, vt];
+      }
+    } else {
+      newTypes = [vt];
+    }
+    updateGestureConfig({ ...gestureConfig, [slotKey]: { vehicleTypes: newTypes } });
   };
 
   const handleStart = async () => {
@@ -176,6 +213,82 @@ export default function SessionSetupScreen() {
           </TouchableOpacity>
         </View>
 
+        {/* ── Gesture Config ─────────────────────────────────────────────────── */}
+        <Text style={styles.label}>GESTURE CONFIG</Text>
+        <View style={styles.gestureCard}>
+          {(['slot1', 'slot2', 'slot3'] as const).map((slotKey) => {
+            const slot = gestureConfig[slotKey];
+            return (
+              <View key={slotKey} style={styles.slotRow}>
+                <Text style={styles.slotLabel}>{SLOT_LABELS[slotKey]}</Text>
+                <View style={styles.slotChips}>
+                  {vehicleTypes.map((vt) => {
+                    const selected = slot.vehicleTypes.includes(vt);
+                    return (
+                      <TouchableOpacity
+                        key={vt}
+                        style={[
+                          styles.slotChip,
+                          selected && (gestureConfig.enhancedEnabled
+                            ? styles.slotChipSelectedEnhanced
+                            : styles.slotChipSelected),
+                        ]}
+                        onPress={() => handleSlotToggle(slotKey, vt)}
+                      >
+                        <Text style={[
+                          styles.slotChipText,
+                          selected && (gestureConfig.enhancedEnabled
+                            ? styles.slotChipTextSelectedEnhanced
+                            : styles.slotChipTextSelected),
+                        ]}>
+                          {vt}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+            );
+          })}
+
+          <View style={styles.enhancedRow}>
+            <View>
+              <Text style={styles.enhancedLabel}>Enhanced Gesture</Text>
+              <Text style={styles.enhancedSub}>
+                {gestureConfig.enhancedEnabled
+                  ? 'Multi-vehicle per finger count — select multiple'
+                  : 'One vehicle per finger count'}
+              </Text>
+            </View>
+            <Switch
+              value={gestureConfig.enhancedEnabled}
+              onValueChange={(v) => updateGestureConfig({ ...gestureConfig, enhancedEnabled: v })}
+              trackColor={{ false: G.rim1, true: G.blueRim }}
+              thumbColor={gestureConfig.enhancedEnabled ? G.blue : G.textMute}
+            />
+          </View>
+        </View>
+
+        {/* ── Haptics ────────────────────────────────────────────────────────── */}
+        <Text style={styles.label}>HAPTICS</Text>
+        <View style={styles.hapticsCard}>
+          <View style={styles.hapticsRow}>
+            <View>
+              <Text style={styles.hapticsLabel}>Vibration Feedback</Text>
+              <Text style={styles.hapticsSub}>Buzz on every press and counted drag</Text>
+            </View>
+            <Switch
+              value={hapticsEnabled}
+              onValueChange={(v) => {
+                setHapticsEnabledUI(v);
+                setHapticsEnabled(v);
+              }}
+              trackColor={{ false: G.rim1, true: G.blueRim }}
+              thumbColor={hapticsEnabled ? G.blue : G.textMute}
+            />
+          </View>
+        </View>
+
         <Text style={styles.label}>GPS</Text>
         <View style={styles.gpsBox}>
           <Text style={styles.gpsText}>
@@ -246,6 +359,48 @@ function createStyles(G: ThemeTokens) {
     },
     vtAddBtnDisabled: { backgroundColor: G.glass0, borderColor: G.rim0 },
     vtAddBtnText: { color: G.blue, fontWeight: '700', fontSize: 14 },
+
+    // Gesture config
+    gestureCard: {
+      backgroundColor: G.glass1, borderRadius: G.radiusSm,
+      borderWidth: 1, borderColor: G.rim1, overflow: 'hidden',
+    },
+    slotRow: {
+      paddingHorizontal: 14, paddingVertical: 10,
+      borderBottomWidth: 1, borderBottomColor: G.rim0,
+    },
+    slotLabel: { color: G.textMute, fontSize: 10, fontWeight: '700', letterSpacing: 1, marginBottom: 6 },
+    slotChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+    slotChip: {
+      paddingHorizontal: 10, paddingVertical: 5,
+      borderRadius: 50, borderWidth: 1, borderColor: G.rim1,
+      backgroundColor: G.glass0,
+    },
+    slotChipSelected:             { borderColor: G.blueRim,  backgroundColor: G.blueGlass },
+    slotChipSelectedEnhanced:     { borderColor: G.greenRim, backgroundColor: G.greenGlass },
+    slotChipText:                 { color: G.textMute, fontSize: 12 },
+    slotChipTextSelected:         { color: G.blue,  fontWeight: '600' },
+    slotChipTextSelectedEnhanced: { color: G.green, fontWeight: '600' },
+    enhancedRow: {
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+      paddingHorizontal: 14, paddingVertical: 12,
+    },
+    enhancedLabel: { color: G.text, fontSize: 14 },
+    enhancedSub:   { color: G.textMute, fontSize: 11, marginTop: 2 },
+
+    // Haptics
+    hapticsCard: {
+      backgroundColor: G.glass1, borderRadius: G.radiusSm,
+      borderWidth: 1, borderColor: G.rim1, overflow: 'hidden',
+    },
+    hapticsRow: {
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+      paddingHorizontal: 14, paddingVertical: 12,
+    },
+    hapticsLabel: { color: G.text, fontSize: 14 },
+    hapticsSub:   { color: G.textMute, fontSize: 11, marginTop: 2 },
+
+    // GPS + start
     gpsBox: {
       backgroundColor: G.glass1, borderRadius: G.radiusSm,
       borderWidth: 1, borderColor: G.rim1, padding: 12,

@@ -1,8 +1,13 @@
 import React, { useMemo, useRef, useState } from 'react';
 import {
   View, Text, TouchableOpacity, PanResponder, StyleSheet,
+  useWindowDimensions, Animated,
 } from 'react-native';
 import { computeMovement } from '../modules/direction/DirectionCalculator';
+import { GestureConfig } from '../modules/gesture/GestureConfig';
+import {
+  hapticLight, hapticMedium, hapticHeavy, hapticSelection,
+} from '../modules/haptics/HapticService';
 import { Movement } from '../types';
 import { useTheme } from '../context/ThemeContext';
 import { ThemeTokens } from '../theme';
@@ -12,30 +17,20 @@ interface Props {
   vehicleTypes: string[];
   onDrag: (from: string, movement: Movement, vehicleType: string) => void;
   paused?: boolean;
+  gestureConfig?: GestureConfig;
+  pedTotal?: number;
+  onPedestrian?: () => void;
+  total?: number;
+  onUndo?: () => void;
+  onPedUndo?: () => void;
 }
 
-const CENTER_RADIUS = 9;
-const ARM_THICKNESS = 3;
-const CIRCLE_R = 0.32;
-const NODE_SIZE_RATIO = 0.36;
+const DOUBLE_TAP_MS = 300;
+const RIPPLE_SIZE   = 110;
 
-function computeNodePositions(
-  legs: string[],
-  anchorIdx: number,
-): Record<string, { rx: number; ry: number }> {
-  const n = legs.length;
-  const result: Record<string, { rx: number; ry: number }> = {};
-  for (let i = 0; i < n; i++) {
-    const leg = legs[(anchorIdx + i) % n];
-    const angleDeg = 90 + (i * 360) / n;
-    const angleRad = (angleDeg * Math.PI) / 180;
-    result[leg] = {
-      rx: 0.5 + CIRCLE_R * Math.cos(angleRad),
-      ry: 0.5 + CIRCLE_R * Math.sin(angleRad),
-    };
-  }
-  return result;
-}
+// Simple grid: 4 fixed nodes (N/E/S/W) arranged in a cross pattern.
+const NODE_SIZE_RATIO = 0.28;
+const MAX_NODE_SIZE = 170;  // increased from 160
 
 function chunk<T>(arr: T[], size: number): T[][] {
   const out: T[][] = [];
@@ -43,111 +38,284 @@ function chunk<T>(arr: T[], size: number): T[][] {
   return out;
 }
 
-export default function IntersectionDragMap({ legs, vehicleTypes, onDrag, paused }: Props) {
+export default function IntersectionDragMap({
+  legs, vehicleTypes, onDrag, paused,
+  gestureConfig, pedTotal, onPedestrian,
+  total, onUndo, onPedUndo,
+}: Props) {
   const G = useTheme();
-  const styles = useMemo(() => createStyles(G), [G]);
+  const { width: screenW, height: screenH } = useWindowDimensions();
+  const isCompact = Math.min(screenW, screenH) < 400;
+  const isLandscape = screenW > screenH;
+  const styles = useMemo(() => createStyles(G, isCompact, isLandscape), [G, isCompact, isLandscape]);
 
   const resolvedLegs = legs && legs.length > 0 ? legs : ['N', 'E', 'S', 'W'];
 
-  const [anchorIdx, setAnchorIdx] = useState(0);
-  const [dragFrom, setDragFrom] = useState<{ leg: string; vehicleType: string } | null>(null);
-  const [dragTo, setDragTo] = useState<string | null>(null);
-  const [diagramSize, setDiagramSize] = useState(280);
+  const [anchorIdx, setAnchorIdx]       = useState(0);
+  const [dragFrom,  setDragFrom]        = useState<{ leg: string; vehicleType: string } | null>(null);
+  const [dragTo,    setDragTo]          = useState<string | null>(null);
+  const [containerW, setContainerW]     = useState(320);
+  const [containerH, setContainerH]     = useState(480);
+  const [rippleVisible, setRippleVisible] = useState(false);
+  const [ripplePos,   setRipplePos]     = useState({ x: 0, y: 0 });
 
-  const dragFromRef     = useRef<{ leg: string; vehicleType: string } | null>(null);
-  const dragToRef       = useRef<string | null>(null);
-  const anchorIdxRef    = useRef(0);
-  const resolvedLegsRef = useRef(resolvedLegs);
-  const diagramSizeRef  = useRef(280);
-  const onDragRef       = useRef(onDrag);
-  const vehicleTypesRef = useRef(vehicleTypes);
-  const pausedRef       = useRef(false);
+  // Ripple animation
+  const rippleAnim   = useRef(new Animated.Value(0)).current;
+  const rippleScale  = rippleAnim.interpolate({ inputRange: [0, 1], outputRange: [0.1, 3.5] });
+  const rippleOpacity = rippleAnim.interpolate({ inputRange: [0, 0.4, 1], outputRange: [0.65, 0.45, 0] });
+
+  const fireRippleRef = useRef<(x: number, y: number) => void>(() => {});
+  const fireRipple = (x: number, y: number) => {
+    setRipplePos({ x, y });
+    setRippleVisible(true);
+    rippleAnim.setValue(0);
+    Animated.timing(rippleAnim, { toValue: 1, duration: 500, useNativeDriver: true })
+      .start(() => setRippleVisible(false));
+  };
+  fireRippleRef.current = fireRipple;
+
+  // Stable refs for PanResponder callbacks
+  const dragFromRef      = useRef<{ leg: string; vehicleType: string } | null>(null);
+  const dragToRef        = useRef<string | null>(null);
+  const anchorIdxRef     = useRef(0);
+  const resolvedLegsRef  = useRef(resolvedLegs);
+  const containerWRef    = useRef(320);
+  const containerHRef    = useRef(480);
+  const onDragRef        = useRef(onDrag);
+  const vehicleTypesRef  = useRef(vehicleTypes);
+  const pausedRef        = useRef(false);
+  const gestureConfigRef = useRef<GestureConfig | undefined>(undefined);
+  const onPedestrianRef  = useRef<(() => void) | undefined>(undefined);
+  const maxFingersRef    = useRef(1);
+  const lastDeadTapRef   = useRef(0);
 
   anchorIdxRef.current    = anchorIdx;
   resolvedLegsRef.current = resolvedLegs;
-  diagramSizeRef.current  = diagramSize;
+  containerWRef.current   = containerW;
+  containerHRef.current   = containerH;
   onDragRef.current       = onDrag;
   vehicleTypesRef.current = vehicleTypes;
   pausedRef.current       = paused ?? false;
+  gestureConfigRef.current  = gestureConfig;
+  onPedestrianRef.current   = onPedestrian;
 
-  function findDragStart(x: number, y: number) {
-    const size = diagramSizeRef.current;
-    const ns   = Math.round(size * NODE_SIZE_RATIO);
-    const positions = computeNodePositions(resolvedLegsRef.current, anchorIdxRef.current);
+  // ── Grid layout helpers ────────────────────────────────────────────────────
+
+  function getNodeSize() {
+    const cw = containerWRef.current;
+    const ch = containerHRef.current;
+    const baseSize = Math.min(cw, ch) * NODE_SIZE_RATIO;
+    return Math.round(Math.min(baseSize, MAX_NODE_SIZE));
+  }
+
+  // Returns {x, y} center position for each leg in a simple cross grid.
+  // Rotates so the selected anchor (standing-at) leg is always at the bottom, facing the user.
+  function getGridPositions(): Record<string, { x: number; y: number }> {
+    const cw = containerWRef.current;
+    const ch = containerHRef.current;
+    const cx = cw / 2;
+    const cy = ch / 2;
+    const ns = getNodeSize();
+    const gap = ns * 0.6 + 60; // space between nodes (base spacing + 60px)
+
+    const legs = resolvedLegsRef.current;
+    const anchor = anchorIdxRef.current;
+    const result: Record<string, { x: number; y: number }> = {};
+
+    // Slot positions: 0=top, 1=right, 2=bottom, 3=left
+    const slotPositions = [
+      { x: cx, y: cy - gap },   // 0: top
+      { x: cx + gap, y: cy },   // 1: right
+      { x: cx, y: cy + gap },   // 2: bottom — anchor always goes here
+      { x: cx - gap, y: cy },   // 3: left
+    ];
+
+    // Rotate ring so anchor leg lands at slot 2 (bottom)
+    for (let i = 0; i < Math.min(legs.length, 4); i++) {
+      const slot = (i - anchor + 2 + 4) % 4;
+      result[legs[i]] = slotPositions[slot];
+    }
+
+    return result;
+  }
+
+  // Check if a point is inside a node's bounds
+  function findNodeAtPoint(x: number, y: number): string | null {
+    const ns = getNodeSize();
+    const positions = getGridPositions();
+    for (const [leg, { x: cx, y: cy }] of Object.entries(positions)) {
+      if (Math.abs(x - cx) <= ns / 2 && Math.abs(y - cy) <= ns / 2) return leg;
+    }
+    return null;
+  }
+
+  // Find which vehicle button was tapped within a node
+  function findVehicleInNode(leg: string, x: number, y: number): string | null {
+    const ns = getNodeSize();
+    const positions = getGridPositions();
+    const center = positions[leg];
+    if (!center) return null;
+
+    const dx = x - center.x;
+    const dy = y - center.y;
+    if (Math.abs(dx) > ns / 2 || Math.abs(dy) > ns / 2) return null;
+
     const types = vehicleTypesRef.current;
     if (!types.length) return null;
-    for (const [leg, { rx, ry }] of Object.entries(positions)) {
-      const dx = x - rx * size;
-      const dy = y - ry * size;
-      if (Math.abs(dx) <= ns / 2 && Math.abs(dy) <= ns / 2) {
-        const nCols = 2;
-        const nRows = Math.ceil(types.length / nCols);
-        const col = Math.min(nCols - 1, Math.floor((dx + ns / 2) / (ns / nCols)));
-        const row = Math.min(nRows - 1, Math.floor((dy + ns / 2) / (ns / nRows)));
-        return { leg, vehicleType: types[Math.min(row * nCols + col, types.length - 1)] };
-      }
-    }
-    return null;
+
+    const nCols = 2;
+    const nRows = Math.ceil(types.length / nCols);
+    const col = Math.min(nCols - 1, Math.floor((dx + ns / 2) / (ns / nCols)));
+    const row = Math.min(nRows - 1, Math.floor((dy + ns / 2) / (ns / nRows)));
+    return types[Math.min(row * nCols + col, types.length - 1)];
   }
 
-  function findNearestLeg(x: number, y: number) {
-    const size = diagramSizeRef.current;
-    const ns   = Math.round(size * NODE_SIZE_RATIO);
-    const positions = computeNodePositions(resolvedLegsRef.current, anchorIdxRef.current);
-    for (const [leg, { rx, ry }] of Object.entries(positions)) {
-      if (Math.abs(x - rx * size) <= ns / 2 && Math.abs(y - ry * size) <= ns / 2) return leg;
+  // Nearest-node detection: finds the closest node to finger position.
+  // Bulletproof — no zones, no misses.
+  function findNearestNode(x: number, y: number, excludeLeg?: string): string | null {
+    const positions = getGridPositions();
+    let nearest: string | null = null;
+    let minDist = Infinity;
+
+    for (const [leg, { x: cx, y: cy }] of Object.entries(positions)) {
+      if (leg === excludeLeg) continue;
+      const dist = Math.sqrt((x - cx) ** 2 + (y - cy) ** 2);
+      if (dist < minDist) {
+        minDist = dist;
+        nearest = leg;
+      }
     }
-    return null;
+    return nearest;
   }
+
+  // Check if tap is in dead space (for pedestrian double-tap)
+  function isInDeadSpace(x: number, y: number): boolean {
+    return findNodeAtPoint(x, y) === null;
+  }
+
+  // ── Pan responder ──────────────────────────────────────────────────────────
 
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder:  () => true,
+
       onPanResponderGrant: (evt) => {
         if (pausedRef.current) return;
+        maxFingersRef.current = evt.nativeEvent.touches.length;
         const { locationX, locationY } = evt.nativeEvent;
-        const from = findDragStart(locationX, locationY);
-        dragFromRef.current = from; dragToRef.current = null;
-        setDragFrom(from); setDragTo(null);
-      },
-      onPanResponderMove: (evt) => {
-        const { locationX, locationY } = evt.nativeEvent;
-        const near = findNearestLeg(locationX, locationY);
-        const to   = near !== null && near !== dragFromRef.current?.leg ? near : null;
-        dragToRef.current = to; setDragTo(to);
-      },
-      onPanResponderRelease: () => {
-        const from = dragFromRef.current;
-        const to   = dragToRef.current;
-        if (from && to) {
-          onDragRef.current(from.leg, computeMovement(from.leg, to, resolvedLegsRef.current), from.vehicleType);
+
+        const leg = findNodeAtPoint(locationX, locationY);
+        if (leg) {
+          const vt = findVehicleInNode(leg, locationX, locationY);
+          if (vt) {
+            hapticLight();
+            dragFromRef.current = { leg, vehicleType: vt };
+            setDragFrom({ leg, vehicleType: vt });
+          }
         }
-        dragFromRef.current = null; dragToRef.current = null;
-        setDragFrom(null); setDragTo(null);
+        dragToRef.current = null;
+        setDragTo(null);
       },
+
+      onPanResponderMove: (evt) => {
+        const fingerCount = evt.nativeEvent.touches.length;
+        if (fingerCount > maxFingersRef.current) {
+          maxFingersRef.current = fingerCount;
+          const cfg = gestureConfigRef.current;
+          if (fingerCount >= 2 && dragFromRef.current && cfg) {
+            const slot = fingerCount >= 3 ? cfg.slot3 : cfg.slot2;
+            if (slot.vehicleTypes.length > 0) {
+              const updated = { leg: dragFromRef.current.leg, vehicleType: slot.vehicleTypes[0] };
+              dragFromRef.current = updated;
+              setDragFrom(updated);
+            }
+          }
+        }
+
+        if (!dragFromRef.current) return;
+
+        const { locationX, locationY } = evt.nativeEvent;
+        const nearest = findNearestNode(locationX, locationY, dragFromRef.current.leg);
+        dragToRef.current = nearest;
+        setDragTo(nearest);
+      },
+
+      onPanResponderRelease: (evt) => {
+        const from   = dragFromRef.current;
+        const to     = dragToRef.current;
+        const maxFin = maxFingersRef.current;
+        const cfg    = gestureConfigRef.current;
+
+        if (from && to) {
+          const movement = computeMovement(from.leg, to, resolvedLegsRef.current);
+          if (maxFin >= 2 && cfg) {
+            const slot = maxFin >= 3 ? cfg.slot3 : cfg.slot2;
+            if (cfg.enhancedEnabled) {
+              hapticHeavy();
+              for (const vt of slot.vehicleTypes) onDragRef.current(from.leg, movement, vt);
+            } else {
+              hapticMedium();
+              onDragRef.current(from.leg, movement, slot.vehicleTypes[0] ?? from.vehicleType);
+            }
+          } else {
+            hapticMedium();
+            onDragRef.current(from.leg, movement, from.vehicleType);
+          }
+        } else if (!from) {
+          // Check for dead-space double-tap (pedestrian)
+          const { locationX, locationY } = evt.nativeEvent;
+          if (isInDeadSpace(locationX, locationY)) {
+            const now = Date.now();
+            if (now - lastDeadTapRef.current < DOUBLE_TAP_MS) {
+              hapticSelection();
+              fireRippleRef.current(locationX, locationY);
+              onPedestrianRef.current?.();
+              lastDeadTapRef.current = 0;
+            } else {
+              lastDeadTapRef.current = now;
+            }
+          }
+        }
+
+        dragFromRef.current   = null;
+        dragToRef.current     = null;
+        maxFingersRef.current = 1;
+        setDragFrom(null);
+        setDragTo(null);
+      },
+
       onPanResponderTerminate: () => {
-        dragFromRef.current = null; dragToRef.current = null;
-        setDragFrom(null); setDragTo(null);
+        dragFromRef.current   = null;
+        dragToRef.current     = null;
+        maxFingersRef.current = 1;
+        setDragFrom(null);
+        setDragTo(null);
       },
     })
   ).current;
 
-  const nodePositions = computeNodePositions(resolvedLegs, anchorIdx);
-  const half     = diagramSize * 0.5;
-  const nodeSize = Math.round(diagramSize * NODE_SIZE_RATIO);
-  const rows     = chunk(vehicleTypes, 2);
+  // ── Derived values ─────────────────────────────────────────────────────────
+
+  const nodeSize = getNodeSize();
+  const gridPositions = getGridPositions();
+  const rows = chunk(vehicleTypes, 2);
+  const anchorLeg = resolvedLegs[anchorIdx];
+
+  // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
     <View style={styles.root}>
-      <View style={styles.anchorRow}>
-        <Text style={styles.anchorLabel}>STANDING AT</Text>
+
+      {/* ── Control row ──────────────────────────────────────────────── */}
+      <View style={styles.controlRow}>
+        <Text style={styles.anchorLabel}>{isLandscape || isCompact ? 'AT' : 'STANDING AT'}</Text>
         <View style={styles.anchorBtns}>
           {resolvedLegs.map((leg, idx) => (
             <TouchableOpacity
               key={leg}
               style={[styles.anchorBtn, anchorIdx === idx && styles.anchorBtnActive]}
-              onPress={() => setAnchorIdx(idx)}
+              onPress={() => { hapticSelection(); setAnchorIdx(idx); }}
             >
               <Text style={[styles.anchorBtnText, anchorIdx === idx && styles.anchorBtnTextActive]}>
                 {leg}
@@ -155,183 +323,256 @@ export default function IntersectionDragMap({ legs, vehicleTypes, onDrag, paused
             </TouchableOpacity>
           ))}
         </View>
+
+        <View style={{ flex: 1, minWidth: 6 }} />
+
+        {total !== undefined && (
+          <View style={styles.counterPill}>
+            <Text style={styles.counterNum}>{total}</Text>
+            {onUndo && (
+              <TouchableOpacity
+                testID="undo-btn"
+                onPress={() => { hapticHeavy(); onUndo(); }}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Text style={styles.undoGlyph}>↩</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
+
+        {pedTotal !== undefined && (
+          <View style={styles.pedPill}>
+            <Text style={styles.pedGlyph}>👣</Text>
+            <Text style={styles.pedNum}>{pedTotal}</Text>
+            {onPedUndo && (
+              <TouchableOpacity
+                onPress={() => { hapticHeavy(); onPedUndo(); }}
+                disabled={pedTotal === 0}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Text style={[styles.undoGlyph, pedTotal === 0 && styles.undoGlyphDim]}>↩</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
       </View>
 
+      {/* ── Grid canvas ──────────────────────────────────────────────── */}
       <View
-        style={styles.diagramWrapper}
+        style={styles.canvas}
         onLayout={(e) => {
-          const { width, height: h } = e.nativeEvent.layout;
-          setDiagramSize(Math.min(width, h) * 0.98);
+          const { width, height } = e.nativeEvent.layout;
+          setContainerW(width);
+          setContainerH(height);
         }}
+        {...panResponder.panHandlers}
       >
-        <View
-          style={[styles.diagram, { width: diagramSize, height: diagramSize }]}
-          {...panResponder.panHandlers}
-        >
-          {Object.entries(nodePositions).map(([leg, { rx, ry }]) => {
-            const nx = rx * diagramSize;
-            const ny = ry * diagramSize;
-            const dx = nx - half; const dy = ny - half;
-            const armLen   = Math.sqrt(dx * dx + dy * dy);
-            const armAngle = Math.atan2(dy, dx) * (180 / Math.PI);
-            const isActive = dragFrom?.leg === leg || dragTo === leg;
-            return (
-              <View
-                key={`arm-${leg}`}
-                pointerEvents="none"
-                style={[
-                  styles.arm,
-                  {
-                    left: (half + nx) / 2 - armLen / 2,
-                    top:  (half + ny) / 2 - ARM_THICKNESS / 2,
-                    width: armLen,
-                    transform: [{ rotate: `${armAngle}deg` }],
-                  },
-                  isActive && styles.armActive,
-                ]}
-              />
-            );
-          })}
-
-          <View
-            pointerEvents="none"
-            style={[styles.centerDot, { left: half - CENTER_RADIUS, top: half - CENTER_RADIUS }]}
-          />
-
-          {Object.entries(nodePositions).map(([leg, { rx, ry }]) => {
-            const isAnchor = leg === resolvedLegs[anchorIdx];
-            const isFrom   = dragFrom?.leg === leg;
-            const isTo     = dragTo === leg;
-            return (
-              <View
-                key={`node-${leg}`}
-                pointerEvents="none"
-                style={[
-                  styles.legNode,
-                  { left: rx * diagramSize - nodeSize / 2, top: ry * diagramSize - nodeSize / 2, width: nodeSize, height: nodeSize },
-                  isFrom && styles.legNodeFrom,
-                  isTo   && styles.legNodeTo,
-                  !isFrom && !isTo && isAnchor && styles.legNodeAnchor,
-                ]}
-              >
-                <View style={[styles.dirBadge, isAnchor && !isFrom && !isTo && styles.dirBadgeAnchor]}>
-                  <Text style={[styles.dirBadgeText, isAnchor && !isFrom && !isTo && styles.dirBadgeTextAnchor]}>
-                    {leg}{isAnchor ? ' ·' : ''}
-                  </Text>
-                </View>
-                <View style={styles.vehicleGrid}>
-                  {rows.map((pair, rowIdx) => (
-                    <View key={rowIdx} style={styles.vehicleRow}>
-                      {pair.map((vt) => {
-                        const isActiveBtn = isFrom && dragFrom?.vehicleType === vt;
-                        return (
-                          <View
-                            key={vt}
-                            style={[
-                              styles.vehicleBtn,
-                              isTo        && styles.vehicleBtnTo,
-                              isActiveBtn && styles.vehicleBtnActive,
-                            ]}
-                          >
-                            <Text
-                              style={[
-                                styles.vehicleBtnText,
-                                isTo        && styles.vehicleBtnTextTo,
-                                isActiveBtn && styles.vehicleBtnTextActive,
-                              ]}
-                              numberOfLines={2}
-                              adjustsFontSizeToFit
-                            >
-                              {vt}
-                            </Text>
-                          </View>
-                        );
-                      })}
-                      {pair.length < 2 && <View style={{ flex: 1 }} />}
-                    </View>
-                  ))}
-                </View>
+        {/* Grid nodes */}
+        {Object.entries(gridPositions).map(([leg, { x, y }]) => {
+          const isAnchor = leg === anchorLeg;
+          const isFrom   = dragFrom?.leg === leg;
+          const isTo     = dragTo === leg;
+          return (
+            <View
+              key={`node-${leg}`}
+              pointerEvents="none"
+              style={[
+                styles.gridNode,
+                {
+                  left:   x - nodeSize / 2,
+                  top:    y - nodeSize / 2,
+                  width:  nodeSize,
+                  height: nodeSize,
+                },
+                isFrom && styles.gridNodeFrom,
+                isTo   && styles.gridNodeTo,
+                !isFrom && !isTo && isAnchor && styles.gridNodeAnchor,
+              ]}
+            >
+              <View style={[styles.dirBadge, isAnchor && !isFrom && !isTo && styles.dirBadgeAnchor]}>
+                <Text style={[styles.dirBadgeText, isAnchor && !isFrom && !isTo && styles.dirBadgeTextAnchor]}>
+                  {leg}{isAnchor ? ' ·' : ''}
+                </Text>
               </View>
-            );
-          })}
-
-          {paused && (
-            <View pointerEvents="none" style={styles.pausedOverlay}>
-              <Text style={styles.pausedText}>PAUSED</Text>
+              <View style={styles.vehicleGrid}>
+                {rows.map((pair, rowIdx) => (
+                  <View key={rowIdx} style={styles.vehicleRow}>
+                    {pair.map((vt) => {
+                      const isActiveBtn = isFrom && dragFrom?.vehicleType === vt;
+                      return (
+                        <View
+                          key={vt}
+                          style={[
+                            styles.vehicleBtn,
+                            isTo        && styles.vehicleBtnTo,
+                            isActiveBtn && styles.vehicleBtnActive,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.vehicleBtnText,
+                              isTo        && styles.vehicleBtnTextTo,
+                              isActiveBtn && styles.vehicleBtnTextActive,
+                            ]}
+                            numberOfLines={2}
+                            adjustsFontSizeToFit
+                          >
+                            {vt}
+                          </Text>
+                        </View>
+                      );
+                    })}
+                    {pair.length < 2 && <View style={{ flex: 1 }} />}
+                  </View>
+                ))}
+              </View>
             </View>
-          )}
-        </View>
+          );
+        })}
+
+        {/* Ripple */}
+        {rippleVisible && (
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              styles.ripple,
+              {
+                left:      ripplePos.x - RIPPLE_SIZE / 2,
+                top:       ripplePos.y - RIPPLE_SIZE / 2,
+                transform: [{ scale: rippleScale }],
+                opacity:   rippleOpacity,
+              },
+            ]}
+          />
+        )}
+
+        {/* Paused overlay */}
+        {paused && (
+          <View pointerEvents="none" style={styles.pausedOverlay}>
+            <Text style={styles.pausedText}>PAUSED</Text>
+          </View>
+        )}
       </View>
 
       <Text style={styles.hint}>
         {dragFrom
-          ? `${dragFrom.leg} · ${dragFrom.vehicleType} — drag to exit direction`
+          ? `${dragFrom.leg} · ${dragFrom.vehicleType} — drag to exit`
           : paused
-            ? 'Tap ▶ to resume counting'
-            : 'Swipe a vehicle type in any approach to count it'}
+            ? 'Tap ▶ to resume'
+            : onPedestrian
+              ? '👣 Double-tap dead space for pedestrians · Swipe from vehicle to count'
+              : 'Swipe from vehicle to count'}
       </Text>
     </View>
   );
 }
 
-function createStyles(G: ThemeTokens) {
+function createStyles(G: ThemeTokens, compact: boolean, landscape: boolean) {
   return StyleSheet.create({
-    root: { flex: 1, gap: 8 },
-    anchorRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
-    anchorLabel: { color: G.textMute, fontSize: 10, fontWeight: '700', letterSpacing: 1.2 },
-    anchorBtns: { flexDirection: 'row', gap: 6, flex: 1, flexWrap: 'wrap' },
+    root: { flex: 1, gap: compact ? 4 : 6, minHeight: 0 },
+
+    // ── Control row ──────────────────────────────────────────────────
+    controlRow: { flexDirection: 'row', alignItems: 'center', gap: compact ? 4 : 6 },
+    anchorLabel: {
+      color: G.textMute, fontSize: (compact || landscape) ? 9 : 10,
+      fontWeight: '700', letterSpacing: 1.2, flexShrink: 0,
+    },
+    anchorBtns: { flexDirection: 'row', gap: 4, flexWrap: 'wrap', flexShrink: 1 },
     anchorBtn: {
-      paddingHorizontal: 12, paddingVertical: 6,
+      paddingHorizontal: (compact || landscape) ? 8 : 10,
+      paddingVertical: (compact || landscape) ? 3 : 5,
       borderRadius: G.radiusSm, borderWidth: 1, borderColor: G.rim1,
       backgroundColor: G.glass1,
     },
-    anchorBtnActive: { borderColor: G.blueRim, backgroundColor: G.blueGlass },
-    anchorBtnText: { color: G.textMute, fontSize: 12, fontWeight: '700' },
+    anchorBtnActive:     { borderColor: G.blueRim, backgroundColor: G.blueGlass },
+    anchorBtnText:       { color: G.textMute, fontSize: landscape ? 11 : 12, fontWeight: '700' },
     anchorBtnTextActive: { color: G.blue },
-    diagramWrapper: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-    diagram: {
-      position: 'relative', backgroundColor: G.glass0,
-      borderRadius: G.radius, borderWidth: 1, borderColor: G.rim1, overflow: 'hidden',
+
+    counterPill: {
+      flexDirection: 'row', alignItems: 'center', gap: landscape ? 4 : 6, flexShrink: 0,
+      backgroundColor: G.glass2, borderRadius: G.radiusSm,
+      borderWidth: 1, borderColor: G.rim1,
+      paddingHorizontal: landscape ? 6 : 8,
+      paddingVertical: (compact || landscape) ? 3 : 5,
     },
-    arm: { position: 'absolute', height: ARM_THICKNESS, backgroundColor: G.rim0, borderRadius: 2 },
-    armActive: { backgroundColor: G.rim2 },
-    centerDot: {
-      position: 'absolute', width: CENTER_RADIUS * 2, height: CENTER_RADIUS * 2,
-      borderRadius: CENTER_RADIUS, backgroundColor: G.glass3, borderWidth: 1, borderColor: G.rim1,
+    counterNum: {
+      color: G.text, fontSize: landscape ? 16 : (compact ? 18 : 22),
+      fontWeight: '800', minWidth: 22, textAlign: 'right',
     },
-    legNode: {
-      position: 'absolute', borderRadius: G.radiusXs,
-      backgroundColor: G.glass1, borderWidth: 1.5, borderColor: G.rim1, overflow: 'hidden',
+    pedPill: {
+      flexDirection: 'row', alignItems: 'center', gap: landscape ? 3 : 4, flexShrink: 0,
+      backgroundColor: G.greenGlass, borderRadius: G.radiusSm,
+      borderWidth: 1, borderColor: G.greenRim,
+      paddingHorizontal: landscape ? 6 : 8,
+      paddingVertical: (compact || landscape) ? 3 : 5,
     },
-    legNodeAnchor: { borderColor: G.blueRim,  backgroundColor: G.blueGlass },
-    legNodeFrom:   { borderColor: G.orangeRim, backgroundColor: G.orangeGlass },
-    legNodeTo:     { borderColor: G.greenRim,  backgroundColor: G.greenGlass },
+    pedGlyph:     { fontSize: landscape ? 12 : (compact ? 12 : 14) },
+    pedNum:       { color: G.green, fontSize: landscape ? 14 : (compact ? 14 : 16), fontWeight: '700' },
+    undoGlyph:    { color: G.textSub, fontSize: landscape ? 13 : 14 },
+    undoGlyphDim: { color: G.rim1 },
+
+    // ── Canvas ───────────────────────────────────────────────────────
+    canvas: { flex: 1, minHeight: 0, overflow: 'hidden' },
+
+    // ── Grid nodes ───────────────────────────────────────────────────
+    gridNode: {
+      position: 'absolute', borderRadius: G.radiusSm,
+      backgroundColor: 'transparent', overflow: 'hidden',
+    },
+    gridNodeAnchor: { backgroundColor: G.blueGlass },
+    gridNodeFrom:   { backgroundColor: 'rgba(255,159,10,0.18)' },
+    gridNodeTo:     { backgroundColor: G.greenGlass },
+
     dirBadge: {
-      position: 'absolute', top: 4, right: 4, zIndex: 1,
-      backgroundColor: 'rgba(128,128,128,0.25)', borderRadius: 4,
+      position: 'absolute', top: 3, right: 4, zIndex: 1,
+      backgroundColor: 'rgba(0,0,0,0.35)', borderRadius: 4,
       paddingHorizontal: 4, paddingVertical: 1,
     },
-    dirBadgeAnchor: { backgroundColor: G.blueGlass },
-    dirBadgeText: { color: G.textMute, fontSize: 9, fontWeight: '700', letterSpacing: 0.3 },
-    dirBadgeTextAnchor: { color: G.blue },
-    vehicleGrid: { flex: 1, padding: 2, gap: 2 },
-    vehicleRow:  { flex: 1, flexDirection: 'row', gap: 2 },
+    dirBadgeAnchor:     { backgroundColor: G.blueGlass },
+    dirBadgeText:       { color: '#fff', fontSize: 9, fontWeight: '700', letterSpacing: 0.3 },
+    dirBadgeTextAnchor: { color: '#000' },
+
+    vehicleGrid: { flex: 1, padding: 3, gap: 3 },
+    vehicleRow:  { flex: 1, flexDirection: 'row', gap: 3 },
     vehicleBtn: {
       flex: 1, justifyContent: 'center', alignItems: 'center',
-      borderRadius: G.radiusXs - 2, backgroundColor: G.glass0,
-      borderWidth: 1, borderColor: G.rim0,
+      borderRadius: G.radiusXs,
+      backgroundColor: '#FFD60A',
+      borderWidth: 1.5, borderColor: '#B8960A',
     },
-    vehicleBtnActive: { backgroundColor: G.orangeGlass, borderColor: G.orangeRim },
-    vehicleBtnTo:     { backgroundColor: G.greenGlass,  borderColor: G.greenRim },
-    vehicleBtnText:       { color: G.textSub, fontSize: 12, fontWeight: '700', textAlign: 'center' },
-    vehicleBtnTextActive: { color: G.orange },
-    vehicleBtnTextTo:     { color: G.green },
+    vehicleBtnActive: { backgroundColor: '#FF9F0A' },
+    vehicleBtnTo:     { backgroundColor: G.green },
+    vehicleBtnText:       { color: '#000', fontSize: 12, fontWeight: '700', textAlign: 'center' },
+    vehicleBtnTextActive: { color: '#000' },
+    vehicleBtnTextTo:     { color: '#fff' },
+
+    // ── Pedestrian hint ──────────────────────────────────────────────
+    pedHint: {
+      position: 'absolute',
+      top: '50%', left: '50%',
+      transform: [{ translateX: -100 }, { translateY: -10 }],
+      width: 200,
+    },
+    pedHintText: { color: G.green, fontSize: 11, opacity: 0.35, textAlign: 'center' },
+
+    // ── Ripple ───────────────────────────────────────────────────────
+    ripple: {
+      position: 'absolute',
+      width:  RIPPLE_SIZE,
+      height: RIPPLE_SIZE,
+      borderRadius: RIPPLE_SIZE / 2,
+      backgroundColor: G.green,
+    },
+
+    // ── Paused overlay ───────────────────────────────────────────────
     pausedOverlay: {
       ...StyleSheet.absoluteFillObject,
       backgroundColor: 'rgba(128,128,128,0.45)',
       justifyContent: 'center', alignItems: 'center',
     },
     pausedText: { color: G.orange, fontSize: 18, fontWeight: '700', letterSpacing: 3 },
+
     hint: { color: G.textMute, fontSize: 11, textAlign: 'center' },
   });
 }

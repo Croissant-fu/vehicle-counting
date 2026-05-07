@@ -23,17 +23,32 @@ jest.mock('../modules/vehicleType/VehicleTypeManager', () => ({
   deleteVehicleType: jest.fn().mockResolvedValue(undefined),
 }));
 
-// Stub IntersectionDragMap so tests can trigger onDrag without a real gesture
+// Stub IntersectionDragMap so tests can trigger onDrag/onUndo without real gestures
 jest.mock('../components/IntersectionDragMap', () => {
   const ReactMock = require('react');
-  const { TouchableOpacity: TO, Text: T } = require('react-native');
+  const { TouchableOpacity: TO, Text: T, View: V } = require('react-native');
   return {
     __esModule: true,
-    default: ({ onDrag }: { onDrag: (from: string, movement: Movement, vehicleType: VehicleType) => void }) =>
+    default: ({
+      onDrag,
+      onUndo,
+    }: {
+      onDrag: (from: string, movement: Movement, vehicleType: VehicleType) => void;
+      onUndo?: () => void;
+    }) =>
       ReactMock.createElement(
-        TO,
-        { testID: 'drag-map', onPress: () => onDrag('N', 'straight', 'moto') },
-        ReactMock.createElement(T, null, 'drag')
+        V,
+        null,
+        ReactMock.createElement(
+          TO,
+          { testID: 'drag-map', onPress: () => onDrag('N', 'straight', 'moto') },
+          ReactMock.createElement(T, null, 'drag'),
+        ),
+        ReactMock.createElement(
+          TO,
+          { testID: 'undo-btn', onPress: onUndo },
+          ReactMock.createElement(T, null, 'undo'),
+        ),
       ),
   };
 });
